@@ -5,7 +5,7 @@
 #include <math.h>
 
 int main(int argc, char *argv[]) {
-	unsigned long inputNum = atoi(argv[argc - 1]);
+	unsigned long inputNum = atol(argv[argc - 1]);
 	unsigned long result = round(sqrt(inputNum));
 
 	if (argc == 2) {
