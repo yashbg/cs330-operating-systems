@@ -27,11 +27,15 @@ unsigned long getDirSize(const char *root) {
 		strcpy(dirPath, root);
 		strcat(dirPath, "/");
 		strcat(dirPath, dir->d_name);
-		// printf("%s\n", dir->d_name);
 
-		struct stat dirStat;
-		stat(dirPath, &dirStat);
-		size += dirStat.st_size;
+		if (dir->d_type == DT_REG) {
+			// dir is a file
+			struct stat dirStat;
+			stat(dirPath, &dirStat);
+			size += dirStat.st_size;
+			
+			continue;
+		}
 
 		if (dir->d_type == DT_DIR) {
 			// dir is a directory
