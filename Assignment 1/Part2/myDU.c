@@ -72,6 +72,25 @@ unsigned long getDirSize(const char *root) {
 			}
 
 			size += atol(sizeStr);
+			continue;
+		}
+
+		if (dir->d_type == DT_LNK) {
+			// dir is a symbolic link
+			struct stat dirStat;
+			stat(dirPath, &dirStat);
+
+			if (S_ISREG(dirStat.st_mode)) {
+				// dir points to a file
+				size += dirStat.st_size;
+			}
+
+			else if (S_ISDIR(dirStat.st_mode)) {
+				// dir points to a directory
+				size += getDirSize(dirPath);
+			}
+			
+			continue;
 		}
 	}
 
