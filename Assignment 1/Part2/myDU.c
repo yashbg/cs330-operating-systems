@@ -7,15 +7,18 @@
 #include <sys/stat.h>
 
 unsigned long getDirSize(const char *root) {
+	struct stat rootStat;
+	if (stat(root, &rootStat) < 0) {
+		printf("Unable to execute\n");
+		exit(-1);
+	}
+	unsigned long size = rootStat.st_size;
+
 	DIR *d = opendir(root);
 	if (!d) {
 		printf("Unable to execute");
 		exit(-1);
 	}
-
-	struct stat rootStat;
-	stat(root, &rootStat);
-	unsigned long size = rootStat.st_size;
 
 	struct dirent *dir;
 	while (dir = readdir(d)) {
@@ -31,9 +34,12 @@ unsigned long getDirSize(const char *root) {
 		if (dir->d_type == DT_REG) {
 			// dir is a file
 			struct stat dirStat;
-			stat(dirPath, &dirStat);
-			size += dirStat.st_size;
+			if (stat(dirPath, &dirStat) < 0) {
+				printf("Unable to execute\n");
+				exit(-1);
+			}
 			
+			size += dirStat.st_size;
 			continue;
 		}
 
@@ -78,7 +84,10 @@ unsigned long getDirSize(const char *root) {
 		if (dir->d_type == DT_LNK) {
 			// dir is a symbolic link
 			struct stat dirStat;
-			stat(dirPath, &dirStat);
+			if (stat(dirPath, &dirStat) < 0) {
+				printf("Unable to execute\n");
+				exit(-1);
+			}
 
 			if (S_ISREG(dirStat.st_mode)) {
 				// dir points to a file
