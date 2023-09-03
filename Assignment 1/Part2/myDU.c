@@ -19,10 +19,15 @@ unsigned long getDirSize(const char *root) {
 
 	struct dirent *dir;
 	while (dir = readdir(d)) {
+		if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..")) {
+			continue;
+		}
+
 		char dirPath[4097];
 		strcpy(dirPath, root);
 		strcat(dirPath, "/");
 		strcat(dirPath, dir->d_name);
+		// printf("%s\n", dir->d_name);
 
 		struct stat dirStat;
 		stat(dirPath, &dirStat);
