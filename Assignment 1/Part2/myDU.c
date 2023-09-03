@@ -18,7 +18,7 @@ unsigned long getDirSize(const char *root) {
 	unsigned long size = rootStat.st_size;
 
 	struct dirent *dir;
-	while (!(dir = readdir(d))) {
+	while (dir = readdir(d)) {
 		char dirPath[4097];
 		strcpy(dirPath, root);
 		strcat(dirPath, "/");
