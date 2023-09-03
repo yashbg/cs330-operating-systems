@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 	char cpath[9] = "./";
 	if (execv(strcat(cpath, cargv[0]), cargv)) {
 		printf("Unable to execute\n");
-		return 0;
+		exit(-1);
 	}
 
 	return 0;
