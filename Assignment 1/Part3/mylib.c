@@ -2,15 +2,15 @@
 #include <sys/mman.h>
 #include "mylib.h"
 
-struct Node {
+struct FreeNode {
 	unsigned long size;
-	struct Node *next;
-	struct Node *prev;
+	struct FreeNode *next;
+	struct FreeNode *prev;
 };
 
-void pushNode(struct Node *nodePtr);
+void pushNode(struct FreeNode *nodePtr);
 
-struct Node *freeHead = NULL;
+struct FreeNode *freeHead = NULL;
 
 void *memalloc(unsigned long size) {
 	printf("memalloc() called\n");
