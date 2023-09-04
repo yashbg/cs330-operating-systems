@@ -24,7 +24,7 @@ int main()
 		return -1;
 	}
 
-	if(q != p+16)
+	if(q != p+24)
 	{
 		printf("3.Testcase failed\n");
 		return -1;
@@ -42,5 +42,4 @@ int main()
 	printf("Testcase passed\n");
 	return 0;
 }
-
 
