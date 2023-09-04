@@ -2,6 +2,10 @@
 #include <sys/mman.h>
 #include "mylib.h"
 
+struct AllocMdata {
+	unsigned long size;
+};
+
 struct FreeNode {
 	unsigned long size;
 	struct FreeNode *next;
@@ -29,6 +33,19 @@ void *memalloc(unsigned long size) {
 		if (memPtr == MAP_FAILED) {
 			return NULL;
 		}
+
+		// fill metadata of allocated memory
+		struct AllocMdata mdata = {size};
+		*(struct AllocMdata*)memPtr = mdata;
+
+		// fill metadata of free memory and push it into free list
+		unsigned long memSize = 8 + size;
+		void *freePtr = (char*)memPtr + memSize;
+		struct FreeNode node = {mmapSize - memSize, NULL, NULL};
+		*(struct FreeNode*)freePtr = node;
+		pushNode(freePtr);
+
+		return (char*)memPtr + 8;
 	}
 
 	return NULL;
