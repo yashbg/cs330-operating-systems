@@ -14,9 +14,16 @@ struct FreeNode {
 
 void pushNode(struct FreeNode *nodePtr);
 
+void deleteNode(struct FreeNode *nodePtr);
+
 struct FreeNode *freeHead = NULL;
 
 struct FreeNode *findFreeNode(unsigned long size);
+
+void fillAllocMdata(struct AllocMdata *memPtr, unsigned long size) {
+	struct AllocMdata mdata = {size};
+	*memPtr = mdata;
+}
 
 void *requestMem(unsigned long memSize, unsigned long size) {
 	// request memory from OS
@@ -30,9 +37,7 @@ void *requestMem(unsigned long memSize, unsigned long size) {
 		return NULL;
 	}
 
-	// fill metadata of allocated memory
-	struct AllocMdata mdata = {size};
-	*(struct AllocMdata*)memPtr = mdata;
+	fillAllocMdata(memPtr, size);
 
 	// fill metadata of free memory and push it into free list
 	void *freePtr = (char*)memPtr + memSize;
@@ -68,6 +73,13 @@ void *memalloc(unsigned long size) {
 	struct FreeNode *freePtr = findFreeNode(size);
 	if (!freePtr) {
 		return requestMem(memSize, size);
+	}
+
+	if (freePtr->size == memSize) {
+		deleteNode(freePtr);
+		fillAllocMdata(freePtr, size);
+		
+		return (char*)freePtr + 8;
 	}
 	
 	return NULL;
