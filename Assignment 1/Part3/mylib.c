@@ -18,9 +18,9 @@ struct FreeNode *freeHead = NULL;
 
 struct FreeNode *findFreeNode(unsigned long size);
 
-void *requestMem(unsigned long size) {
+void *requestMem(unsigned long memSize, unsigned long size) {
 	// request memory from OS
-	unsigned long mmapSize = size;
+	unsigned long mmapSize = memSize;
 	if (size % MMAP_MIN_SZ) {
 		mmapSize = ((size / MMAP_MIN_SZ) + 1) * MMAP_MIN_SZ;
 	}
@@ -35,7 +35,6 @@ void *requestMem(unsigned long size) {
 	*(struct AllocMdata*)memPtr = mdata;
 
 	// fill metadata of free memory and push it into free list
-	unsigned long memSize = 8 + size;
 	void *freePtr = (char*)memPtr + memSize;
 	struct FreeNode node = {mmapSize - memSize, NULL, NULL};
 	*(struct FreeNode*)freePtr = node;
@@ -51,17 +50,26 @@ void *memalloc(unsigned long size) {
 		return NULL;
 	}
 
+	unsigned long memSize = 8 + size;
+	if (memSize % 8) {
+		// eight-bytes alignment padding
+		unsigned long ebaPadding = 8 - memSize % 8;
+		memSize += ebaPadding;
+	}
+	if (memSize < 24) {
+		// memSize should be atleast 24
+		memSize = 24;
+	}
+
 	if (!freeHead) {
-		return requestMem(size);
+		return requestMem(memSize, size);
 	}
 
 	struct FreeNode *freePtr = findFreeNode(size);
 	if (!freePtr) {
-		return requestMem(size);
+		return requestMem(memSize, size);
 	}
-
 	
-
 	return NULL;
 }
 
