@@ -154,6 +154,10 @@ void *memalloc(unsigned long size) {
 int memfree(void *ptr) {
 	printf("memfree() called\n");
 
+	if (!ptr) {
+		return -1;
+	}
+
 	struct AllocMdata *nodePtr = (char*)ptr - 8;
 	struct FreeNode *leftNodePtr = findLeftFreeNode(nodePtr);
 	struct FreeNode *rightNodePtr = findRightFreeNode(nodePtr);
