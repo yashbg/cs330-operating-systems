@@ -38,14 +38,40 @@ void deleteNode(struct FreeNode *nodePtr) {
 	}
 }
 
-struct FreeNode *findFreeNode(unsigned long memSize) {
-	struct FreeNode *node = freeHead;
-	while (node) {
-		if (node->size >= memSize) {
-			return node;
+struct FreeNode *findFirstFit(unsigned long memSize) {
+	struct FreeNode *nodePtr = freeHead;
+	while (nodePtr) {
+		if (nodePtr->size >= memSize) {
+			return nodePtr;
 		}
 
-		node = node->next;
+		nodePtr = nodePtr->next;
+	}
+
+	return NULL;
+}
+
+struct FreeNode *findLeftFreeNode(struct AllocMdata *nodePtr) {
+	struct FreeNode *curPtr = freeHead;
+	while (curPtr) {
+		if ((char*)curPtr + curPtr->size == (char*)nodePtr) {
+			return curPtr;
+		}
+
+		curPtr = curPtr->next;
+	}
+
+	return NULL;
+}
+
+struct FreeNode *findRightFreeNode(struct AllocMdata *nodePtr) {
+	struct FreeNode *curPtr = freeHead;
+	while (curPtr) {
+		if ((char*)nodePtr + nodePtr->size == (char*)curPtr) {
+			return curPtr;
+		}
+
+		curPtr = curPtr->next;
 	}
 
 	return NULL;
@@ -104,7 +130,7 @@ void *memalloc(unsigned long size) {
 		return requestMem(memSize, size);
 	}
 
-	struct FreeNode *freePtr = findFreeNode(memSize);
+	struct FreeNode *freePtr = findFirstFit(memSize);
 	if (!freePtr) {
 		return requestMem(memSize, size);
 	}
@@ -127,5 +153,39 @@ void *memalloc(unsigned long size) {
 
 int memfree(void *ptr) {
 	printf("memfree() called\n");
+
+	struct AllocMdata *nodePtr = (char*)ptr - 8;
+	struct FreeNode *leftNodePtr = findLeftFreeNode(nodePtr);
+	struct FreeNode *rightNodePtr = findRightFreeNode(nodePtr);
+
+	if (!leftNodePtr && !rightNodePtr) {
+		// contiguous memory chunks on the left side and the right side are allocated
+		fillFreeMdata(nodePtr, nodePtr->size);
+		pushNode(nodePtr);
+
+		return 0;
+	}
+
+	if (!leftNodePtr && rightNodePtr) {
+		// contiguous memory chunk on the right side is free
+		deleteNode(rightNodePtr);
+		fillFreeMdata(nodePtr, nodePtr->size + rightNodePtr->size);
+
+		return 0;
+	}
+
+	if (leftNodePtr && !rightNodePtr) {
+		// contiguous memory chunk on the left side is free
+		deleteNode(leftNodePtr);
+		fillFreeMdata(leftNodePtr, leftNodePtr->size + nodePtr->size);
+
+		return 0;
+	}
+
+	// contiguous memory chunks on the both left side and the right side are free
+	deleteNode(leftNodePtr);
+	deleteNode(rightNodePtr);
+	fillFreeMdata(leftNodePtr, leftNodePtr->size + nodePtr->size + rightNodePtr->size);
+	
 	return 0;
-}	
+}
