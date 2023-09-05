@@ -12,6 +12,8 @@ struct FreeNode {
 	struct FreeNode *prev;
 };
 
+struct FreeNode *freeHead = NULL;
+
 void pushNode(struct FreeNode *nodePtr) {
 	nodePtr->next = freeHead;
 
@@ -36,8 +38,6 @@ void deleteNode(struct FreeNode *nodePtr) {
 	}
 }
 
-struct FreeNode *freeHead = NULL;
-
 struct FreeNode *findFreeNode(unsigned long memSize) {
 	struct FreeNode *node = freeHead;
 	while (node) {
@@ -47,7 +47,7 @@ struct FreeNode *findFreeNode(unsigned long memSize) {
 
 		node = node->next;
 	}
-	
+
 	return NULL;
 }
 
