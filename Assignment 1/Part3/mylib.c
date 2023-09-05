@@ -20,8 +20,8 @@ struct FreeNode *freeHead = NULL;
 
 struct FreeNode *findFreeNode(unsigned long size);
 
-void fillAllocMdata(struct AllocMdata *memPtr, unsigned long size) {
-	struct AllocMdata mdata = {size};
+void fillAllocMdata(struct AllocMdata *memPtr, unsigned long memSize) {
+	struct AllocMdata mdata = {memSize};
 	*memPtr = mdata;
 }
 
@@ -37,7 +37,7 @@ void *requestMem(unsigned long memSize, unsigned long size) {
 		return NULL;
 	}
 
-	fillAllocMdata(memPtr, size);
+	fillAllocMdata(memPtr, memSize);
 
 	// fill metadata of free memory and push it into free list
 	void *freePtr = (char*)memPtr + memSize;
@@ -77,8 +77,8 @@ void *memalloc(unsigned long size) {
 
 	if (freePtr->size == memSize) {
 		deleteNode(freePtr);
-		fillAllocMdata(freePtr, size);
-		
+		fillAllocMdata(freePtr, memSize);
+
 		return (char*)freePtr + 8;
 	}
 	
