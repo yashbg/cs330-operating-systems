@@ -90,8 +90,9 @@ void fillFreeMdata(struct FreeNode *nodePtr, unsigned long freeSize) {
 void *requestMem(unsigned long memSize, unsigned long size) {
 	// request memory from OS
 	unsigned long mmapSize = memSize;
-	if (size % MMAP_MIN_SZ) {
-		mmapSize = ((size / MMAP_MIN_SZ) + 1) * MMAP_MIN_SZ;
+	unsigned long mmapMinSize = 4 * 1024 * 1024;
+	if (size % mmapMinSize) {
+		mmapSize = ((size / mmapMinSize) + 1) * mmapMinSize;
 	}
 
 	void *memPtr = mmap(NULL, mmapSize, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
