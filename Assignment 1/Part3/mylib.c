@@ -109,8 +109,6 @@ void *requestMem(unsigned long memSize, unsigned long size) {
 }
 
 void *memalloc(unsigned long size) {
-	printf("memalloc() called\n");
-	
 	if (!size) {
 		return NULL;
 	}
@@ -152,8 +150,6 @@ void *memalloc(unsigned long size) {
 }
 
 int memfree(void *ptr) {
-	printf("memfree() called\n");
-
 	if (!ptr) {
 		return -1;
 	}
