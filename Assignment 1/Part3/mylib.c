@@ -12,13 +12,44 @@ struct FreeNode {
 	struct FreeNode *prev;
 };
 
-void pushNode(struct FreeNode *nodePtr);
+void pushNode(struct FreeNode *nodePtr) {
+	nodePtr->next = freeHead;
 
-void deleteNode(struct FreeNode *nodePtr);
+	if (freeHead) {
+		freeHead->prev = nodePtr;
+	}
+
+	freeHead = nodePtr;
+}
+
+void deleteNode(struct FreeNode *nodePtr) {
+	if (nodePtr == freeHead) {
+		freeHead = nodePtr->next;
+	}
+
+	if (nodePtr->next) {
+		nodePtr->next->prev = nodePtr->prev;
+	}
+
+	if (nodePtr->prev) {
+		nodePtr->prev->next = nodePtr->next;
+	}
+}
 
 struct FreeNode *freeHead = NULL;
 
-struct FreeNode *findFreeNode(unsigned long size);
+struct FreeNode *findFreeNode(unsigned long memSize) {
+	struct FreeNode *node = freeHead;
+	while (node) {
+		if (node->size >= memSize) {
+			return node;
+		}
+
+		node = node->next;
+	}
+	
+	return NULL;
+}
 
 void fillAllocMdata(struct AllocMdata *memPtr, unsigned long memSize) {
 	struct AllocMdata mdata = {memSize};
@@ -73,7 +104,7 @@ void *memalloc(unsigned long size) {
 		return requestMem(memSize, size);
 	}
 
-	struct FreeNode *freePtr = findFreeNode(size);
+	struct FreeNode *freePtr = findFreeNode(memSize);
 	if (!freePtr) {
 		return requestMem(memSize, size);
 	}
