@@ -25,6 +25,11 @@ void fillAllocMdata(struct AllocMdata *memPtr, unsigned long memSize) {
 	*memPtr = mdata;
 }
 
+void fillFreeMdata(struct FreeNode *nodePtr, unsigned long freeSize) {
+	struct FreeNode node = {freeSize, NULL, NULL};
+	*nodePtr = node;
+}
+
 void *requestMem(unsigned long memSize, unsigned long size) {
 	// request memory from OS
 	unsigned long mmapSize = memSize;
@@ -39,10 +44,8 @@ void *requestMem(unsigned long memSize, unsigned long size) {
 
 	fillAllocMdata(memPtr, memSize);
 
-	// fill metadata of free memory and push it into free list
 	void *freePtr = (char*)memPtr + memSize;
-	struct FreeNode node = {mmapSize - memSize, NULL, NULL};
-	*(struct FreeNode*)freePtr = node;
+	fillFreeMdata(freePtr, mmapSize - memSize);
 	pushNode(freePtr);
 
 	return (char*)memPtr + 8;
@@ -75,14 +78,20 @@ void *memalloc(unsigned long size) {
 		return requestMem(memSize, size);
 	}
 
-	if (freePtr->size - memSize < 24) {
-		deleteNode(freePtr);
-		fillAllocMdata(freePtr, freePtr->size);
+	deleteNode(freePtr);
 
+	if (freePtr->size - memSize < 24) {
+		fillAllocMdata(freePtr, freePtr->size);
 		return (char*)freePtr + 8;
 	}
+
+	fillAllocMdata(freePtr, memSize);
+
+	void *newFreePtr = (char*)freePtr + memSize;
+	fillFreeMdata(newFreePtr, freePtr->size - memSize);
+	pushNode(newFreePtr);
 	
-	return NULL;
+	return (char*)freePtr + 8;
 }
 
 int memfree(void *ptr) {
