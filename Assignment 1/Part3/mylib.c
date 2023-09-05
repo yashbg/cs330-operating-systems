@@ -161,7 +161,7 @@ int memfree(void *ptr) {
 	void *mdataPtr = (char*)ptr - 8;
 	struct AllocMdata *memPtr = (struct AllocMdata*)mdataPtr;
 	struct FreeNode *nodePtr = (struct FreeNode*)mdataPtr;
-	
+
 	struct FreeNode *leftNodePtr = findLeftFreeNode(memPtr);
 	struct FreeNode *rightNodePtr = findRightFreeNode(memPtr);
 
@@ -177,6 +177,7 @@ int memfree(void *ptr) {
 		// contiguous memory chunk on the right side is free
 		deleteNode(rightNodePtr);
 		fillFreeMdata(nodePtr, memPtr->size + rightNodePtr->size);
+		pushNode(nodePtr);
 
 		return 0;
 	}
@@ -185,6 +186,7 @@ int memfree(void *ptr) {
 		// contiguous memory chunk on the left side is free
 		deleteNode(leftNodePtr);
 		fillFreeMdata(leftNodePtr, leftNodePtr->size + memPtr->size);
+		pushNode(leftNodePtr);
 
 		return 0;
 	}
@@ -193,6 +195,7 @@ int memfree(void *ptr) {
 	deleteNode(leftNodePtr);
 	deleteNode(rightNodePtr);
 	fillFreeMdata(leftNodePtr, leftNodePtr->size + memPtr->size + rightNodePtr->size);
+	pushNode(leftNodePtr);
 	
 	return 0;
 }
