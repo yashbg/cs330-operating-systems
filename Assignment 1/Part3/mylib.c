@@ -75,9 +75,9 @@ void *memalloc(unsigned long size) {
 		return requestMem(memSize, size);
 	}
 
-	if (freePtr->size == memSize) {
+	if (freePtr->size - memSize < 24) {
 		deleteNode(freePtr);
-		fillAllocMdata(freePtr, memSize);
+		fillAllocMdata(freePtr, freePtr->size);
 
 		return (char*)freePtr + 8;
 	}
