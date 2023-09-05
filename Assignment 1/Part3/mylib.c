@@ -112,11 +112,11 @@ void *memalloc(unsigned long size) {
 	deleteNode(freePtr);
 
 	if (freePtr->size - memSize < 24) {
-		fillAllocMdata(freePtr, freePtr->size);
+		fillAllocMdata((struct AllocMdata*)freePtr, freePtr->size);
 		return (char*)freePtr + 8;
 	}
 
-	fillAllocMdata(freePtr, memSize);
+	fillAllocMdata((struct AllocMdata*)freePtr, memSize);
 
 	void *newFreePtr = (char*)freePtr + memSize;
 	fillFreeMdata(newFreePtr, freePtr->size - memSize);
