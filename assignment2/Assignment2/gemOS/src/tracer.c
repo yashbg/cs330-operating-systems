@@ -18,16 +18,62 @@ long trace_buffer_close(struct file *filep) {
 }
 
 int trace_buffer_read(struct file *filep, char *buff, u32 count) {
-    return 0;
-}
-
-int trace_buffer_write(struct file *filep, char *buff, u32 count) {
-    if (!filep || (filep->type != TRACE_BUFFER) || !(filep->mode & O_WRITE)) {
+    if (!filep || filep->type != TRACE_BUFFER || !(filep->mode & O_READ)) {
         return -EINVAL;
     }
 
     if (!buff) {
         return -EINVAL;
+    }
+
+    if (!count) {
+        return count;
+    }
+
+    struct trace_buffer_info *trace_buffer = filep->trace_buffer;
+    if (!trace_buffer->is_full && trace_buffer->r_off == trace_buffer->w_off) {
+        return 0;
+    }
+
+    u32 used;
+    if (trace_buffer->w_off >= trace_buffer->r_off) {
+        used = trace_buffer->w_off - trace_buffer->r_off;
+    }
+    else {
+        used = TRACE_BUFFER_MAX_SIZE - (trace_buffer->r_off - trace_buffer->w_off);
+    }
+
+    if (count > used) {
+        count = used;
+    }
+
+    if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off) {
+        u32 rem = TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off;
+        memcpy(buff, trace_buffer->buf + trace_buffer->r_off, rem);
+        memcpy(buff + rem, trace_buffer->buf, count - rem);
+        trace_buffer->r_off = count - rem;
+    }
+    else {
+        memcpy(buff, trace_buffer->buf + trace_buffer->r_off, count);
+        trace_buffer->r_off += count;
+    }
+
+    trace_buffer->is_full = 0;
+
+    return count;
+}
+
+int trace_buffer_write(struct file *filep, char *buff, u32 count) {
+    if (!filep || filep->type != TRACE_BUFFER || !(filep->mode & O_WRITE)) {
+        return -EINVAL;
+    }
+
+    if (!buff) {
+        return -EINVAL;
+    }
+
+    if (!count) {
+        return count;
     }
     
     struct trace_buffer_info *trace_buffer = filep->trace_buffer;
