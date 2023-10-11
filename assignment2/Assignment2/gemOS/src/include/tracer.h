@@ -13,6 +13,9 @@
 // Trace buffer information structure
 struct trace_buffer_info {
     void *buf;
+    u32 r_off;
+    u32 w_off;
+    int is_full;
 };
 
 extern int sys_create_trace_buffer(struct exec_context *current, int mode);

@@ -22,7 +22,47 @@ int trace_buffer_read(struct file *filep, char *buff, u32 count) {
 }
 
 int trace_buffer_write(struct file *filep, char *buff, u32 count) {
-    return 0;
+    if (!filep || (filep->type != TRACE_BUFFER) || !(filep->mode & O_WRITE)) {
+        return -EINVAL;
+    }
+
+    if (!buff) {
+        return -EINVAL;
+    }
+    
+    struct trace_buffer_info *trace_buffer = filep->trace_buffer;
+    if (trace_buffer->is_full) {
+        return 0;
+    }
+
+    u32 free;
+    if (trace_buffer->w_off >= trace_buffer->r_off) {
+        free = TRACE_BUFFER_MAX_SIZE - (trace_buffer->w_off - trace_buffer->r_off);
+    }
+    else {
+        free = trace_buffer->r_off - trace_buffer->w_off;
+    }
+
+    if (count > free) {
+        count = free;
+    }
+
+    if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->w_off) {
+        u32 rem = TRACE_BUFFER_MAX_SIZE - trace_buffer->w_off;
+        memcpy(trace_buffer->buf + trace_buffer->w_off, buff, rem);
+        memcpy(trace_buffer->buf, buff + rem, count - rem);
+        trace_buffer->w_off = count - rem;
+    }
+    else {
+        memcpy(trace_buffer->buf + trace_buffer->w_off, buff, count);
+        trace_buffer->w_off += count;
+    }
+
+    if (count == free) {
+        trace_buffer->is_full = 1;
+    }
+
+    return count;
 }
 
 int sys_create_trace_buffer(struct exec_context *current, int mode) {
@@ -47,27 +87,37 @@ int sys_create_trace_buffer(struct exec_context *current, int mode) {
         return -ENOMEM;
     }
 
-    current->files[fd]->type = TRACE_BUFFER;
-    current->files[fd]->mode = mode;
-    current->files[fd]->offp = 0;
-    current->files[fd]->ref_count = 1;
-    current->files[fd]->inode = NULL;
+    struct file *file = current->files[fd];
+    file->type = TRACE_BUFFER;
+    file->mode = mode;
+    file->offp = 0;
+    file->ref_count = 1;
+    file->inode = NULL;
 
-    current->files[fd]->trace_buffer = os_alloc(sizeof(struct trace_buffer_info));
-    if (!current->files[fd]->trace_buffer) {
+    file->trace_buffer = os_alloc(sizeof(struct trace_buffer_info));
+    if (!file->trace_buffer) {
         return -ENOMEM;
     }
 
-    current->files[fd]->trace_buffer->buf = os_page_alloc(USER_REG);
-
-    current->files[fd]->fops = os_alloc(sizeof(struct fileops));
-    if (!current->files[fd]->fops) {
+    struct trace_buffer_info *trace_buffer = file->trace_buffer;
+    trace_buffer->buf = os_page_alloc(USER_REG);
+    if (!trace_buffer->buf) {
         return -ENOMEM;
     }
 
-    current->files[fd]->fops->read = &trace_buffer_read;
-    current->files[fd]->fops->write = &trace_buffer_write;
-    current->files[fd]->fops->close = &trace_buffer_close;
+    trace_buffer->r_off = 0;
+    trace_buffer->w_off = 0;
+    trace_buffer->is_full = 0;
+
+    file->fops = os_alloc(sizeof(struct fileops));
+    if (!file->fops) {
+        return -ENOMEM;
+    }
+
+    struct fileops *fops = file->fops;
+    fops->read = &trace_buffer_read;
+    fops->write = &trace_buffer_write;
+    fops->close = &trace_buffer_close;
 
     return fd;
 }
