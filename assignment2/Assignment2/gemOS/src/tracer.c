@@ -58,7 +58,7 @@ int sys_create_trace_buffer(struct exec_context *current, int mode) {
 		return -ENOMEM;
 	}
 
-	// TODO: initialise the members of the trace buffer object
+	current->files[fd]->trace_buffer->buf = os_page_alloc(USER_REG);
 
 	current->files[fd]->fops = os_alloc(sizeof(struct fileops));
 	if (!current->files[fd]->fops) {
@@ -104,7 +104,7 @@ long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long 
     return 0;
 }
 
-//Fault handler
+// Fault handler
 long handle_ftrace_fault(struct user_regs *regs) {
         return 0;
 }
