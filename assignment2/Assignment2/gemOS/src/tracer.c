@@ -14,7 +14,17 @@ int is_valid_mem_range(unsigned long buff, u32 count, int access_bit) {
 }
 
 long trace_buffer_close(struct file *filep) {
-    return 0;   
+    if (!filep || filep->type != TRACE_BUFFER) {
+        return -EINVAL;
+    }
+    
+    os_page_free(USER_REG, filep->trace_buffer->buf);
+    os_free(filep->trace_buffer, sizeof(struct trace_buffer_info));
+    os_free(filep->fops, sizeof(struct fileops));
+    os_free(filep, sizeof(struct file));
+    filep = NULL;
+
+    return 0;
 }
 
 int trace_buffer_read(struct file *filep, char *buff, u32 count) {
