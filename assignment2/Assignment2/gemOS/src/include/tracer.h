@@ -12,7 +12,7 @@
 
 // Trace buffer information structure
 struct trace_buffer_info {
-	void *buf;
+    void *buf;
 };
 
 extern int sys_create_trace_buffer(struct exec_context *current, int mode);
@@ -27,23 +27,23 @@ extern void free_trace_buffer_info(struct trace_buffer_info *p_info);
 #define FILTERED_TRACING 1
 
 enum {
-	ADD_STRACE,
-	REMOVE_STRACE,
-	MAX_STRACE
+    ADD_STRACE,
+    REMOVE_STRACE,
+    MAX_STRACE
 };
 
 struct strace_info {
-	int syscall_num;
-	struct strace_info *next;
+    int syscall_num;
+    struct strace_info *next;
 };
 
 struct strace_head {
-	int count;
-	int is_traced;  
-        int strace_fd;
-        int tracing_mode;
-	struct strace_info *next;
-	struct strace_info *last;	
+    int count;
+    int is_traced;  
+    int strace_fd;
+    int tracing_mode;
+    struct strace_info *next;
+    struct strace_info *last;   
 };
 
 struct file;
@@ -67,28 +67,28 @@ extern int perform_tracing(u64 syscall, u64 param1, u64 param2, u64 param3, u64 
 
 // Commands
 enum {
-               ADD_FTRACE,
-               REMOVE_FTRACE,
-	       ENABLE_FTRACE,
-	       DISABLE_FTRACE,
-	       ENABLE_BACKTRACE,
-	       DISABLE_BACKTRACE,
-	       MAX_FTRACE
+    ADD_FTRACE,
+    REMOVE_FTRACE,
+    ENABLE_FTRACE,
+    DISABLE_FTRACE,
+    ENABLE_BACKTRACE,
+    DISABLE_BACKTRACE,
+    MAX_FTRACE
 };
   
 struct ftrace_info {
-                 unsigned long faddr;
-		 u8 code_backup[4];
-		 u32 num_args;
-		 int fd;
-		 int capture_backtrace;
-                 struct ftrace_info *next;               		 
+    unsigned long faddr;
+    u8 code_backup[4];
+    u32 num_args;
+    int fd;
+    int capture_backtrace;
+    struct ftrace_info *next;
 };
 
 struct ftrace_head {
-	         long count;  
-                 struct ftrace_info *next;               		 
-                 struct ftrace_info *last;   		 
+    long count;  
+    struct ftrace_info *next;
+    struct ftrace_info *last;
 };
 
 struct user_regs;
