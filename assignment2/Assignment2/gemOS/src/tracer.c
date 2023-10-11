@@ -10,6 +10,37 @@
 ///////////////////////////////////////////////////////////////////////////
 
 int is_valid_mem_range(unsigned long buff, u32 count, int access_bit) {
+    struct exec_context *ctx = get_current_ctx();
+    struct mm_segment *mms = ctx->mms;
+    struct vm_area *vm_area = ctx->vm_area;
+
+    if (buff >= mms[MM_SEG_CODE].start && buff + count <= mms[MM_SEG_CODE].next_free - 1) {
+        return mms[MM_SEG_CODE].access_flags & access_bit;
+    }
+
+    else if (buff >= mms[MM_SEG_RODATA].start && buff + count <= mms[MM_SEG_RODATA].next_free - 1) {
+        return mms[MM_SEG_RODATA].access_flags & access_bit;
+    }
+
+    else if (buff >= mms[MM_SEG_DATA].start && buff + count <= mms[MM_SEG_DATA].next_free - 1) {
+        return mms[MM_SEG_DATA].access_flags & access_bit;
+    }
+
+    else if (buff >= mms[MM_SEG_STACK].start && buff + count <= mms[MM_SEG_STACK].end - 1) {
+        return mms[MM_SEG_STACK].access_flags & access_bit;
+    }
+
+    else {
+        struct vm_area *curr = vm_area;
+        while (curr) {
+            if (buff >= curr->vm_start && buff + count <= curr->vm_end - 1) {
+                return curr->access_flags & access_bit;
+            }
+
+            curr = curr->vm_next;
+        }
+    }
+
     return 0;
 }
 
@@ -17,7 +48,7 @@ long trace_buffer_close(struct file *filep) {
     if (!filep || filep->type != TRACE_BUFFER) {
         return -EINVAL;
     }
-    
+
     os_page_free(USER_REG, filep->trace_buffer->buf);
     os_free(filep->trace_buffer, sizeof(struct trace_buffer_info));
     os_free(filep->fops, sizeof(struct fileops));
@@ -55,6 +86,10 @@ int trace_buffer_read(struct file *filep, char *buff, u32 count) {
 
     if (count > used) {
         count = used;
+    }
+
+    if (!is_valid_mem_range((unsigned long)buff, count, MM_WR)) {
+        return -EBADMEM;
     }
 
     if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off) {
@@ -101,6 +136,10 @@ int trace_buffer_write(struct file *filep, char *buff, u32 count) {
 
     if (count > free) {
         count = free;
+    }
+
+    if (!is_valid_mem_range((unsigned long)buff, count, MM_RD)) {
+        return -EBADMEM;
     }
 
     if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->w_off) {
