@@ -230,6 +230,21 @@ int sys_strace(struct exec_context *current, int syscall_num, int action) {
         return -EINVAL;
     }
 
+    if (!current->st_md_base) {
+        current->st_md_base = os_alloc(sizeof(struct strace_head));
+        if (!current->st_md_base) {
+            return -EINVAL;
+        }
+
+        struct strace_head *strace_head = current->st_md_base;
+        strace_head->count = 0;
+        strace_head->is_traced = 0;
+        strace_head->strace_fd = -1;
+        strace_head->tracing_mode = -1;
+        strace_head->next = NULL;
+        strace_head->last = NULL;
+    }
+
     struct strace_head *strace_head = current->st_md_base;
     if (action == ADD_STRACE) {
         if (strace_head->count == STRACE_MAX) {
@@ -311,6 +326,18 @@ int sys_start_strace(struct exec_context *current, int fd, int tracing_mode) {
         return -EINVAL;
     }
 
+    if (!current->st_md_base) {
+        current->st_md_base = os_alloc(sizeof(struct strace_head));
+        if (!current->st_md_base) {
+            return -EINVAL;
+        }
+
+        struct strace_head *strace_head = current->st_md_base;
+        strace_head->count = 0;
+        strace_head->next = NULL;
+        strace_head->last = NULL;
+    }
+
     struct strace_head *strace_head = current->st_md_base;
     strace_head->is_traced = 1;
     strace_head->strace_fd = fd;
@@ -325,10 +352,10 @@ int sys_end_strace(struct exec_context *current) {
     }
 
     struct strace_head *strace_head = current->st_md_base;
-    strace_head->is_traced = 0;
-    strace_head->strace_fd = -1;
-    strace_head->tracing_mode = -1;
-
+    if (!strace_head) {
+        return -EINVAL;
+    }
+    
     struct strace_info *cur = strace_head->next;
     while (cur) {
         struct strace_info *next = cur->next;
@@ -336,11 +363,8 @@ int sys_end_strace(struct exec_context *current) {
         cur = next;
     }
 
-    strace_head->next = NULL;
-    strace_head->last = NULL;
-    strace_head->count = 0;
-
-    // TODO: clear trace buffer
+    os_free(strace_head, sizeof(struct strace_head));
+    current->st_md_base = NULL;
 
     return 0;
 }
