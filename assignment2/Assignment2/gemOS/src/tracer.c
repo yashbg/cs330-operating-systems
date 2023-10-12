@@ -31,13 +31,13 @@ int is_valid_mem_range(unsigned long buff, u32 count, int access_bit) {
     }
 
     else {
-        struct vm_area *curr = vm_area;
-        while (curr) {
-            if (buff >= curr->vm_start && buff + count <= curr->vm_end - 1) {
-                return curr->access_flags & access_bit;
+        struct vm_area *cur = vm_area;
+        while (cur) {
+            if (buff >= cur->vm_start && buff + count <= cur->vm_end - 1) {
+                return cur->access_flags & access_bit;
             }
 
-            curr = curr->vm_next;
+            cur = cur->vm_next;
         }
     }
 
@@ -251,6 +251,28 @@ int sys_start_strace(struct exec_context *current, int fd, int tracing_mode) {
 }
 
 int sys_end_strace(struct exec_context *current) {
+    if (!current) {
+        return -EINVAL;
+    }
+
+    struct strace_head *strace_head = current->st_md_base;
+    strace_head->is_traced = 0;
+    strace_head->strace_fd = -1;
+    strace_head->tracing_mode = -1;
+
+    struct strace_info *cur = strace_head->next;
+    while (cur) {
+        struct strace_info *next = cur->next;
+        os_free(cur, sizeof(struct strace_info));
+        cur = next;
+    }
+
+    strace_head->next = NULL;
+    strace_head->last = NULL;
+    strace_head->count = 0;
+
+    // TODO: clear trace buffer
+
     return 0;
 }
 
