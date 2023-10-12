@@ -226,7 +226,76 @@ int perform_tracing(u64 syscall_num, u64 param1, u64 param2, u64 param3, u64 par
 }
 
 int sys_strace(struct exec_context *current, int syscall_num, int action) {
-    return 0;
+    if (!current) {
+        return -EINVAL;
+    }
+
+    struct strace_head *strace_head = current->st_md_base;
+    if (action == ADD_STRACE) {
+        if (strace_head->count == STRACE_MAX) {
+            return -EINVAL;
+        }
+
+        struct strace_info *cur = strace_head->next;
+        while (cur) {
+            if (cur->syscall_num == syscall_num) {
+                return -EINVAL;
+            }
+
+            cur = cur->next;
+        }
+
+        struct strace_info *new = os_alloc(sizeof(struct strace_info));
+        if (!new) {
+            return -EINVAL;
+        }
+
+        new->syscall_num = syscall_num;
+        new->next = NULL;
+
+        if (!strace_head->next) {
+            strace_head->next = new;
+        }
+        else {
+            strace_head->last->next = new;
+        }
+
+        strace_head->last = new;
+        strace_head->count++;
+
+        return 0;
+    }
+
+    if (action == REMOVE_STRACE) {
+        struct strace_info *cur = strace_head->next;
+        struct strace_info *prev = NULL;
+        while (cur) {
+            if (cur->syscall_num == syscall_num) {
+                struct strace_info *next = cur->next;
+                os_free(cur, sizeof(struct strace_info));
+                if (prev) {
+                    prev->next = next;
+                }
+                else {
+                    strace_head->next = next;
+                }
+
+                if (!next) {
+                    strace_head->last = prev;
+                }
+
+                strace_head->count--;
+                return 0;
+            }
+            
+            prev = cur;
+            cur = cur->next;
+        }
+
+        return -EINVAL;
+    }
+
+    return -EINVAL;
 }
 
 int sys_read_strace(struct file *filep, char *buff, u64 count) {
