@@ -8,6 +8,7 @@
 ///////////////////////////////////////////////////////////////////////
 ///////////////////// Trace buffer functionality ///////////////////// 
 /////////////////////////////////////////////////////////////////////
+
 #define TRACE_BUFFER_MAX_SIZE 4096
 
 // Trace buffer information structure
@@ -42,11 +43,11 @@ struct strace_info {
 
 struct strace_head {
     int count;
-    int is_traced;  
+    int is_traced;
     int strace_fd;
     int tracing_mode;
     struct strace_info *next;
-    struct strace_info *last;   
+    struct strace_info *last;
 };
 
 struct file;

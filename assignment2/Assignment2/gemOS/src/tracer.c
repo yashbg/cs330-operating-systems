@@ -234,6 +234,19 @@ int sys_read_strace(struct file *filep, char *buff, u64 count) {
 }
 
 int sys_start_strace(struct exec_context *current, int fd, int tracing_mode) {
+    if (!current) {
+        return -EINVAL;
+    }
+
+    if (tracing_mode != FULL_TRACING && tracing_mode != FILTERED_TRACING) {
+        return -EINVAL;
+    }
+
+    struct strace_head *strace_head = current->st_md_base;
+    strace_head->is_traced = 1;
+    strace_head->strace_fd = fd;
+    strace_head->tracing_mode = tracing_mode;
+
     return 0;
 }
 
