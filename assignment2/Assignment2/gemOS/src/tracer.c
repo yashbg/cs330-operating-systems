@@ -182,19 +182,19 @@ int sys_create_trace_buffer(struct exec_context *current, int mode) {
         return -ENOMEM;
     }
 
-    struct file *file = current->files[fd];
-    file->type = TRACE_BUFFER;
-    file->mode = mode;
-    file->offp = 0;
-    file->ref_count = 1;
-    file->inode = NULL;
+    struct file *filep = current->files[fd];
+    filep->type = TRACE_BUFFER;
+    filep->mode = mode;
+    filep->offp = 0;
+    filep->ref_count = 1;
+    filep->inode = NULL;
 
-    file->trace_buffer = os_alloc(sizeof(struct trace_buffer_info));
-    if (!file->trace_buffer) {
+    filep->trace_buffer = os_alloc(sizeof(struct trace_buffer_info));
+    if (!filep->trace_buffer) {
         return -ENOMEM;
     }
 
-    struct trace_buffer_info *trace_buffer = file->trace_buffer;
+    struct trace_buffer_info *trace_buffer = filep->trace_buffer;
     trace_buffer->buf = os_page_alloc(USER_REG);
     if (!trace_buffer->buf) {
         return -ENOMEM;
@@ -204,12 +204,12 @@ int sys_create_trace_buffer(struct exec_context *current, int mode) {
     trace_buffer->w_off = 0;
     trace_buffer->is_full = 0;
 
-    file->fops = os_alloc(sizeof(struct fileops));
-    if (!file->fops) {
+    filep->fops = os_alloc(sizeof(struct fileops));
+    if (!filep->fops) {
         return -ENOMEM;
     }
 
-    struct fileops *fops = file->fops;
+    struct fileops *fops = filep->fops;
     fops->read = &trace_buffer_read;
     fops->write = &trace_buffer_write;
     fops->close = &trace_buffer_close;
@@ -221,7 +221,128 @@ int sys_create_trace_buffer(struct exec_context *current, int mode) {
 ////        Start of strace functionality                     /////
 ///////////////////////////////////////////////////////////////////////////
 
+int get_num_params(u64 syscall_num) {
+    switch (syscall_num) {
+        case SYSCALL_EXIT:
+        case SYSCALL_CONFIGURE:
+        case SYSCALL_DUMP_PTT:
+        case SYSCALL_SLEEP:
+        case SYSCALL_PMAP:
+        case SYSCALL_DUP:
+        case SYSCALL_CLOSE:
+        case SYSCALL_TRACE_BUFFER:
+            return 1;
+        
+        case SYSCALL_SIGNAL:
+        case SYSCALL_EXPAND:
+        case SYSCALL_CLONE:
+        case SYSCALL_MUNMAP:
+        case SYSCALL_OPEN:
+        case SYSCALL_DUP2:
+        case SYSCALL_START_STRACE:
+        case SYSCALL_STRACE:
+            return 2;
+        
+        case SYSCALL_MPROTECT:
+        case SYSCALL_READ:
+        case SYSCALL_WRITE:
+        case SYSCALL_LSEEK:
+        case SYSCALL_READ_STRACE:
+        case SYSCALL_READ_FTRACE:
+            return 3;
+        
+        case SYSCALL_MMAP:
+        case SYSCALL_FTRACE:
+            return 4;
+    }
+    
+    return 0;
+}
+
+void trace_buffer_write_num(struct trace_buffer_info *trace_buffer, u64 num) {
+    u32 count = sizeof(u64);
+    void *num_ptr = (void *)&num;
+    if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->w_off) {
+        u32 rem = TRACE_BUFFER_MAX_SIZE - trace_buffer->w_off;
+        memcpy(trace_buffer->buf + trace_buffer->w_off, num_ptr, rem);
+        memcpy(trace_buffer->buf, num_ptr + rem, count - rem);
+        trace_buffer->w_off = count - rem;
+    }
+    else {
+        memcpy(trace_buffer->buf + trace_buffer->w_off, num_ptr, count);
+        trace_buffer->w_off += count;
+    }
+}
+
 int perform_tracing(u64 syscall_num, u64 param1, u64 param2, u64 param3, u64 param4) {
+    struct exec_context *ctx = get_current_ctx();
+    struct strace_head *strace_head = ctx->st_md_base;
+    if (!strace_head) {
+        return 0;
+    }
+
+    if (!strace_head->is_traced) {
+        return 0;
+    }
+
+    int strace_fd = strace_head->strace_fd;
+    struct file *filep = ctx->files[strace_fd];
+    if (!filep || filep->type != TRACE_BUFFER || !(filep->mode & O_WRITE)) {
+        return 0;
+    }
+
+    struct trace_buffer_info *trace_buffer = filep->trace_buffer;
+    void *buf = trace_buffer->buf;
+
+    if (strace_head->tracing_mode == FULL_TRACING) {
+        trace_buffer_write_num(trace_buffer, syscall_num);
+
+        int num_params = get_num_params(syscall_num);
+        if (num_params >= 1) {
+            trace_buffer_write_num(trace_buffer, param1);
+        }
+        if (num_params >= 2) {
+            trace_buffer_write_num(trace_buffer, param2);
+        }
+        if (num_params >= 3) {
+            trace_buffer_write_num(trace_buffer, param3);
+        }
+        if (num_params >= 4) {
+            trace_buffer_write_num(trace_buffer, param4);
+        }
+
+        return 0;
+    }
+
+    if (strace_head->tracing_mode == FILTERED_TRACING) {
+        struct strace_info *cur = strace_head->next;
+        while (cur) {
+            if (cur->syscall_num == syscall_num) {
+                trace_buffer_write_num(trace_buffer, syscall_num);
+
+                int num_params = get_num_params(syscall_num);
+                if (num_params >= 1) {
+                    trace_buffer_write_num(trace_buffer, param1);
+                }
+                if (num_params >= 2) {
+                    trace_buffer_write_num(trace_buffer, param2);
+                }
+                if (num_params >= 3) {
+                    trace_buffer_write_num(trace_buffer, param3);
+                }
+                if (num_params >= 4) {
+                    trace_buffer_write_num(trace_buffer, param4);
+                }
+
+                return 0;
+            }
+            
+            cur = cur->next;
+        }
+
+        return 0;
+    }
+
     return 0;
 }
 
@@ -355,7 +476,7 @@ int sys_end_strace(struct exec_context *current) {
     if (!strace_head) {
         return -EINVAL;
     }
-    
+
     struct strace_info *cur = strace_head->next;
     while (cur) {
         struct strace_info *next = cur->next;
