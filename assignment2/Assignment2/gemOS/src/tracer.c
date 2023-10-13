@@ -222,7 +222,6 @@ int sys_create_trace_buffer(struct exec_context *current, int mode) {
 ///////////////////////////////////////////////////////////////////////////
 
 int get_num_params(u64 syscall_num) {
-    // TODO: SYSCALL_SHRINK, SYSCALL_ALARM
     switch (syscall_num) {
         case SYSCALL_GETPID:
         case SYSCALL_GETPPID:
