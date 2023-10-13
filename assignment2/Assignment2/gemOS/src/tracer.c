@@ -451,23 +451,18 @@ int sys_strace(struct exec_context *current, int syscall_num, int action) {
     return -EINVAL;
 }
 
-u64 trace_buffer_read_num(struct trace_buffer_info *trace_buffer) {
+void trace_buffer_read_num(struct trace_buffer_info *trace_buffer, void *buf) {
     u32 count = sizeof(u64);
-    u64 num = 0;
-    void *num_ptr = (void *)&num;
-
     if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off) {
         u32 rem = TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off;
-        memcpy(num_ptr, trace_buffer->buf + trace_buffer->r_off, rem);
-        memcpy(num_ptr + rem, trace_buffer->buf, count - rem);
+        memcpy(buf, trace_buffer->buf + trace_buffer->r_off, rem);
+        memcpy(buf + rem, trace_buffer->buf, count - rem);
         trace_buffer->r_off = count - rem;
     }
     else {
-        memcpy(num_ptr, trace_buffer->buf + trace_buffer->r_off, count);
+        memcpy(buf, trace_buffer->buf + trace_buffer->r_off, count);
         trace_buffer->r_off += count;
     }
-
-    return num;
 }
 
 int sys_read_strace(struct file *filep, char *buff, u64 count) {
@@ -500,10 +495,10 @@ int sys_read_strace(struct file *filep, char *buff, u64 count) {
             return bytes_read;
         }
 
-        u64 syscall_num = trace_buffer_read_num(trace_buffer);
-        memcpy(buff + bytes_read, (void *)&syscall_num, size);
-        bytes_read += sizeof(u64);
-        used -= sizeof(u64);
+        u64 syscall_num = *(u64 *)(trace_buffer->buf + trace_buffer->r_off);
+        trace_buffer_read_num(trace_buffer, buff + bytes_read);
+        bytes_read += size;
+        used -= size;
 
         int num_params = get_num_params(syscall_num);
         for (int j = 0; j < num_params; j++) {
@@ -511,8 +506,7 @@ int sys_read_strace(struct file *filep, char *buff, u64 count) {
                 return bytes_read;
             }
 
-            u64 param = trace_buffer_read_num(trace_buffer);
-            memcpy(buff + bytes_read, (void *)&param, size);
+            trace_buffer_read_num(trace_buffer, buff + bytes_read);
             bytes_read += size;
             used -= size;
         }
