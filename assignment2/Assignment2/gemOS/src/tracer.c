@@ -222,7 +222,20 @@ int sys_create_trace_buffer(struct exec_context *current, int mode) {
 ///////////////////////////////////////////////////////////////////////////
 
 int get_num_params(u64 syscall_num) {
+    // TODO: SYSCALL_SHRINK, SYSCALL_ALARM
     switch (syscall_num) {
+        case SYSCALL_GETPID:
+        case SYSCALL_GETPPID:
+        case SYSCALL_FORK:
+        case SYSCALL_CFORK:
+        case SYSCALL_VFORK:
+        case SYSCALL_PHYS_INFO:
+        case SYSCALL_STATS:
+        case SYSCALL_GET_USER_P:
+        case SYSCALL_GET_COW_F:
+        case SYSCALL_END_STRACE:
+            return 0;
+
         case SYSCALL_EXIT:
         case SYSCALL_CONFIGURE:
         case SYSCALL_DUMP_PTT:
@@ -256,7 +269,7 @@ int get_num_params(u64 syscall_num) {
             return 4;
     }
     
-    return 0;
+    return -1;
 }
 
 void trace_buffer_write_num(struct trace_buffer_info *trace_buffer, u64 num) {
@@ -275,6 +288,10 @@ void trace_buffer_write_num(struct trace_buffer_info *trace_buffer, u64 num) {
 }
 
 int perform_tracing(u64 syscall_num, u64 param1, u64 param2, u64 param3, u64 param4) {
+    if (syscall_num == SYSCALL_START_STRACE || syscall_num == SYSCALL_END_STRACE) {
+        return 0;
+    }
+
     struct exec_context *ctx = get_current_ctx();
     struct strace_head *strace_head = ctx->st_md_base;
     if (!strace_head) {
@@ -434,8 +451,74 @@ int sys_strace(struct exec_context *current, int syscall_num, int action) {
     return -EINVAL;
 }
 
+u64 trace_buffer_read_num(struct trace_buffer_info *trace_buffer) {
+    u32 count = sizeof(u64);
+    u64 num = 0;
+    void *num_ptr = (void *)&num;
+
+    if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off) {
+        u32 rem = TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off;
+        memcpy(num_ptr, trace_buffer->buf + trace_buffer->r_off, rem);
+        memcpy(num_ptr + rem, trace_buffer->buf, count - rem);
+        trace_buffer->r_off = count - rem;
+    }
+    else {
+        memcpy(num_ptr, trace_buffer->buf + trace_buffer->r_off, count);
+        trace_buffer->r_off += count;
+    }
+
+    return num;
+}
+
 int sys_read_strace(struct file *filep, char *buff, u64 count) {
-    return 0;
+    if (!filep || filep->type != TRACE_BUFFER || !(filep->mode & O_READ)) {
+        return -EINVAL;
+    }
+
+    if (!buff) {
+        return -EINVAL;
+    }
+
+    if (!count) {
+        return 0;
+    }
+
+    struct trace_buffer_info *trace_buffer = filep->trace_buffer;
+    int used;
+    if (trace_buffer->w_off >= trace_buffer->r_off) {
+        used = trace_buffer->w_off - trace_buffer->r_off;
+    }
+    else {
+        used = TRACE_BUFFER_MAX_SIZE - (trace_buffer->r_off - trace_buffer->w_off);
+    }
+
+    int bytes_read = 0;
+    trace_buffer->is_full = 0;
+    int size = sizeof(u64);
+    for (int i = 0; i < count; i++) {
+        if (used < size) {
+            return bytes_read;
+        }
+
+        u64 syscall_num = trace_buffer_read_num(trace_buffer);
+        memcpy(buff + bytes_read, (void *)&syscall_num, size);
+        bytes_read += sizeof(u64);
+        used -= sizeof(u64);
+
+        int num_params = get_num_params(syscall_num);
+        for (int j = 0; j < num_params; j++) {
+            if (used < size) {
+                return bytes_read;
+            }
+
+            u64 param = trace_buffer_read_num(trace_buffer);
+            memcpy(buff + bytes_read, (void *)&param, size);
+            bytes_read += size;
+            used -= size;
+        }
+    }
+
+    return bytes_read;
 }
 
 int sys_start_strace(struct exec_context *current, int fd, int tracing_mode) {
@@ -444,6 +527,10 @@ int sys_start_strace(struct exec_context *current, int fd, int tracing_mode) {
     }
 
     if (tracing_mode != FULL_TRACING && tracing_mode != FILTERED_TRACING) {
+        return -EINVAL;
+    }
+
+    if (current->st_md_base && current->st_md_base->is_traced) {
         return -EINVAL;
     }
 
@@ -474,6 +561,10 @@ int sys_end_strace(struct exec_context *current) {
 
     struct strace_head *strace_head = current->st_md_base;
     if (!strace_head) {
+        return -EINVAL;
+    }
+
+    if (!strace_head->is_traced) {
         return -EINVAL;
     }
 
