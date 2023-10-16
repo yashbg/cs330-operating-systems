@@ -49,6 +49,10 @@ long trace_buffer_close(struct file *filep) {
         return -EINVAL;
     }
 
+    if (!filep->trace_buffer || !filep->trace_buffer->buf || !filep->fops) {
+        return -EINVAL;
+    }
+
     os_page_free(USER_REG, filep->trace_buffer->buf);
     os_free(filep->trace_buffer, sizeof(struct trace_buffer_info));
     os_free(filep->fops, sizeof(struct fileops));
