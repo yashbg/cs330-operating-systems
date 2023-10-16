@@ -583,7 +583,110 @@ int sys_end_strace(struct exec_context *current) {
 ///////////////////////////////////////////////////////////////////////////
 
 long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long nargs, int fd_trace_buffer) {
-    return 0;
+    if (!ctx) {
+        return -EINVAL;
+    }
+
+    if (!ctx->ft_md_base) {
+        ctx->ft_md_base = os_alloc(sizeof(struct ftrace_head));
+        if (!ctx->ft_md_base) {
+            return -EINVAL;
+        }
+
+        struct ftrace_head *ftrace_head = ctx->ft_md_base;
+        ftrace_head->count = 0;
+        ftrace_head->next = NULL;
+        ftrace_head->last = NULL;
+    }
+
+    struct ftrace_head *ftrace_head = ctx->ft_md_base;
+    if (action == ADD_FTRACE) {
+        if (ftrace_head->count == FTRACE_MAX) {
+            return -EINVAL;
+        }
+
+        struct ftrace_info *cur = ftrace_head->next;
+        while (cur) {
+            if (cur->faddr == faddr) {
+                return -EINVAL;
+            }
+
+            cur = cur->next;
+        }
+
+        struct ftrace_info *new = os_alloc(sizeof(struct ftrace_info));
+        if (!new) {
+            return -EINVAL;
+        }
+
+        new->faddr = faddr;
+        // TODO: new->code_backup
+        new->num_args = nargs;
+        new->fd = fd_trace_buffer;
+        new->capture_backtrace = 0;
+        new->next = NULL;
+
+        if (!ftrace_head->next) {
+            ftrace_head->next = new;
+        }
+        else {
+            ftrace_head->last->next = new;
+        }
+
+        ftrace_head->last = new;
+        ftrace_head->count++;
+
+        return 0;
+    }
+
+    if (action == REMOVE_FTRACE) {
+        struct ftrace_info *cur = ftrace_head->next;
+        struct ftrace_info *prev = NULL;
+        while (cur) {
+            if (cur->faddr == faddr) {
+                // TODO: if tracing is enabled on this function, then, disable the tracing on the function
+
+                struct ftrace_info *next = cur->next;
+                os_free(cur, sizeof(struct ftrace_info));
+                if (prev) {
+                    prev->next = next;
+                }
+                else {
+                    ftrace_head->next = next;
+                }
+
+                if (!next) {
+                    ftrace_head->last = prev;
+                }
+
+                ftrace_head->count--;
+                return 0;
+            }
+            
+            prev = cur;
+            cur = cur->next;
+        }
+
+        return -EINVAL;
+    }
+
+    if (action == ENABLE_FTRACE) {
+        struct ftrace_info *cur = ftrace_head->next;
+        while (cur) {
+            if (cur->faddr == faddr) {
+                // TODO: manipulate the address space of the current process, so that, whenever the first instruction of the traced function gets executed, invalid opcode fault gets triggered
+                // TODO: return 0 if tracing is already enabled
+
+                return 0;
+            }
+
+            cur = cur->next;
+        }
+
+        return -EINVAL;
+    }
+
+    return -EINVAL;
 }
 
 // Fault handler
