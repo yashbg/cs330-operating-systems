@@ -747,6 +747,28 @@ long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long 
         return -EINVAL;
     }
 
+    if (action == DISABLE_BACKTRACE) {
+        struct ftrace_info *cur = ftrace_head->next;
+        while (cur) {
+            if (cur->faddr == faddr) {
+                u8 *code = (u8 *)faddr;
+                if (code[0] == INV_OPCODE) {
+                    for (int i = 0; i < 4; i++) {
+                        code[i] = cur->code_backup[i];
+                        cur->code_backup[i] = 0;
+                    }
+                }
+
+                cur->capture_backtrace = 0;
+                return 0;
+            }
+
+            cur = cur->next;
+        }
+
+        return -EINVAL;
+    }
+
     return -EINVAL;
 }
 
