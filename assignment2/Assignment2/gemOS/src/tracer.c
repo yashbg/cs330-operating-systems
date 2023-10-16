@@ -312,7 +312,6 @@ int perform_tracing(u64 syscall_num, u64 param1, u64 param2, u64 param3, u64 par
     }
 
     struct trace_buffer_info *trace_buffer = filep->trace_buffer;
-    void *buf = trace_buffer->buf;
 
     if (strace_head->tracing_mode == FULL_TRACING) {
         trace_buffer_write_num(trace_buffer, syscall_num);
@@ -582,6 +581,11 @@ int sys_end_strace(struct exec_context *current) {
 ////        Start of ftrace functionality                     /////
 ///////////////////////////////////////////////////////////////////////////
 
+struct ret_addr_info {
+    u64 ret_addr;
+    struct ret_addr_info *next;
+};
+
 long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long nargs, int fd_trace_buffer) {
     if (!ctx) {
         return -EINVAL;
@@ -774,7 +778,101 @@ long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long 
 
 // Fault handler
 long handle_ftrace_fault(struct user_regs *regs) {
-    return 0;
+    u64 faddr = regs->entry_rip;
+
+    // code_backup: 0x55 0x48 0x89 0xE5
+	regs->entry_rsp -= 8;
+	*((u64 *)(regs->entry_rsp)) = regs->rbp;
+	regs->rbp = regs->entry_rsp;
+	regs->entry_rip += 4;
+
+    struct exec_context *ctx = get_current_ctx();
+    struct ftrace_head *ftrace_head = ctx->ft_md_base;
+    if (!ftrace_head) {
+        return -EINVAL;
+    }
+    
+    struct ftrace_info *cur = ftrace_head->next;
+    while (cur) {
+        if (cur->faddr == faddr) {
+            int fd = cur->fd;
+            struct file *filep = ctx->files[fd];
+            if (!filep || filep->type != TRACE_BUFFER || !(filep->mode & O_WRITE)) {
+                return -EINVAL;
+            }
+
+            struct ret_addr_info *ret_addr_head;
+            u64 bt_count = 0;
+            if (cur->capture_backtrace) {
+                bt_count = 2;
+                u64 rbp = regs->rbp;
+                u64 ret_addr = *((u64 *)rbp + 1);
+
+                ret_addr_head = os_alloc(sizeof(struct ret_addr_info));
+                ret_addr_head->ret_addr = ret_addr;
+                ret_addr_head->next = NULL;
+
+                struct ret_addr_info *ret_addr_cur = ret_addr_head;
+                while (ret_addr != END_ADDR) {
+                    rbp = *((u64 *)rbp);
+                    ret_addr = *((u64 *)rbp + 1);
+                    if (ret_addr == END_ADDR) {
+                        break;
+                    }
+
+                    ret_addr_cur->next = os_alloc(sizeof(struct ret_addr_info));
+                    ret_addr_cur = ret_addr_cur->next;
+                    ret_addr_cur->ret_addr = ret_addr;
+                    ret_addr_cur->next = NULL;
+
+                    bt_count++;
+                }
+            }
+
+            struct trace_buffer_info *trace_buffer = filep->trace_buffer;
+            u64 nargs = cur->num_args;
+
+            trace_buffer_write_num(trace_buffer, 1 + nargs + bt_count);
+            trace_buffer_write_num(trace_buffer, faddr);
+            if (nargs >= 1) {
+                trace_buffer_write_num(trace_buffer, regs->rdi);
+            }
+            if (nargs >= 2) {
+                trace_buffer_write_num(trace_buffer, regs->rsi);
+            }
+            if (nargs >= 3) {
+                trace_buffer_write_num(trace_buffer, regs->rdx);
+            }
+            if (nargs >= 4) {
+                trace_buffer_write_num(trace_buffer, regs->rcx);
+            }
+            if (nargs >= 5) {
+                trace_buffer_write_num(trace_buffer, regs->r8);
+            }
+            if (cur->capture_backtrace) {
+                trace_buffer_write_num(trace_buffer, faddr);
+                
+                struct ret_addr_info *ret_addr_cur = ret_addr_head;
+                while (ret_addr_cur) {
+                    trace_buffer_write_num(trace_buffer, ret_addr_cur->ret_addr);
+                    ret_addr_cur = ret_addr_cur->next;
+                }
+            }
+
+            struct ret_addr_info *ret_addr_cur = ret_addr_head;
+            while (ret_addr_cur) {
+                struct ret_addr_info *next = ret_addr_cur->next;
+                os_free(ret_addr_cur, sizeof(struct ret_addr_info));
+                ret_addr_cur = next;
+            }
+            
+            return 0;
+        }
+
+        cur = cur->next;
+    }
+
+    return -EINVAL;
 }
 
 int sys_read_ftrace(struct file *filep, char *buff, u64 count) {
