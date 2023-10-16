@@ -1,75 +1,118 @@
-
-/* Checking with system call for different number of arguments by applying filter to some syscalls*/
-
 #include<ulib.h>
 
-int main (u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5) {
-
-        int strace_fd = create_trace_buffer(O_RDWR);
-        if(strace_fd != 3){
-                printf("create trace buffer failed\n");
-                return -1;
-        }
-        int rdwr_fd = create_trace_buffer(O_RDWR);
-        if(rdwr_fd != 4){
-                printf("create trace buffer failed for read and write\n");
-                return -1;
-        }
-        u64 strace_buff[4096];
-        int read_buff[4096];
-        int write_buff[4096];
-
-        for(int i = 0, j = 0; i< 4096; i++){
-                j = i % 26;
-                write_buff[i] = 'A' + j;
-        }
-	int ret = strace(25, 0);
-	if(ret < 0){
-		printf("1. Test case failed\n");
-		return -1;
-	}
-	ret = strace(2, 0);
-	if(ret < 0){
-                printf("2. Test case failed\n");
-		return -1;
-        }
-		
-        start_strace(strace_fd, FILTERED_TRACING);
-        int write_ret = write(rdwr_fd, write_buff, 10);
-        if(write_ret != 10){
-                printf("3. Test case failed\n");
-                return -1;
-        }
-        int read_ret = read(rdwr_fd, read_buff, 10);
-        if(read_ret != 10){
-                printf("4. Test case failed\n");
-                return -1;
-        }
-	sleep(10);
-	getpid();
-        end_strace();
-
-        int strace_ret = read_strace(strace_fd, strace_buff, 5);
-        if(strace_ret != 40){
-                printf("5. Test case failed\n");
-                return -1;
-	}
-        if(strace_buff[0] != 25){
-                printf("6. Test case failed\n");
-                return -1;
-        }
-	if(strace_buff[2] != (u64)&write_buff){
-                printf("7. Test case failed\n");
-                return -1;
-        }
-
-        if(strace_buff[4] != 2){
-                printf("8. Test case failed\n");
-                return -1;
-        }
-	printf("Test case passed\n");
-        close(strace_fd);
-        close(rdwr_fd);
-
-        return 0;
+static int func2(int a)
+{
+   return (2*a);
 }
+
+static int func1(int a, int b)
+{
+   int ret = 0;
+   ret = func2(a+b);
+   return ret;
+}
+int main(u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5)
+{
+    int ret = 0;
+    int ftrace_fd = 0;
+    u64 ftrace_buff[512];
+
+    ftrace_fd = create_trace_buffer(O_RDWR);
+    if(ftrace_fd != 3)
+    {
+	printf("0. Test case failed\n");
+	return -1;
+    }
+    
+    ret = ftrace((unsigned long)&func1, ADD_FTRACE, 2, ftrace_fd);
+    if(ret != 0)
+    { 
+	printf("1. Test case failed\n");
+	return -1;
+    }
+
+    ret = ftrace((unsigned long)&func1, ENABLE_FTRACE, 0, ftrace_fd);
+    if(ret != 0)
+    { 
+	printf("2. Test case failed\n");
+	return -1;
+    }
+
+    ret = ftrace((unsigned long)&func2, ADD_FTRACE, 1, ftrace_fd);
+    if(ret != 0)
+    { 
+	printf("3. Test case failed\n");
+	return -1;
+    }
+
+    ret = ftrace((unsigned long)&func2, ENABLE_FTRACE, 0, ftrace_fd);
+    if(ret != 0)
+    { 
+	printf("4. Test case failed\n");
+	return -1;
+    }
+
+    func1(5,10);
+
+    int read_ret = read_ftrace(ftrace_fd, ftrace_buff, 4);
+    /*for(int i = 0; i<(read_ret/8); i++){
+	printf("ftrace_buff[%d] : %x\n", i*8, ftrace_buff[i]);
+    }*/
+    if(read_ret != 40)
+    { 
+	printf("5. Test case failed\n");
+	return -1;
+    }
+
+    if((u64*)(((u64*)ftrace_buff)[0]) != (u64*)(&func1))
+    { 
+	printf("6. Test case failed\n");
+	return -1;
+    }
+
+    if(((u64*)ftrace_buff)[1] != 0x5)
+    { 
+	printf("7. Test case failed\n");
+	return -1;
+    }
+
+    if(((u64*)ftrace_buff)[2] != 0xA)
+    { 
+	printf("8. Test case failed\n");
+	return -1;
+    }
+
+    if((u64*)(((u64*)ftrace_buff)[3]) != (u64*)(&func2))
+    { 
+	printf("9. Test case failed\n");
+	return -1;
+    }
+
+    if(((u64*)ftrace_buff)[4] != 0xF)
+    { 
+	printf("10. Test case failed\n");
+	return -1;
+    }
+    
+
+    ret = ftrace((unsigned long)&func1, REMOVE_FTRACE, 0, ftrace_fd);
+    if(ret != 0)
+    { 
+	printf("11. Test case failed\n");
+	return -1;
+    }
+
+    ret = ftrace((unsigned long)&func2, REMOVE_FTRACE, 0, ftrace_fd);
+    if(ret != 0)
+    { 
+	printf("12. Test case failed\n");
+	return -1;
+    }
+
+    close(ftrace_fd);
+
+    printf("Test case passed\n");
+
+    return 0;
+}
+  

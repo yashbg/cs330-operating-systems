@@ -620,11 +620,13 @@ long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long 
         }
 
         new->faddr = faddr;
-        // TODO: new->code_backup
         new->num_args = nargs;
         new->fd = fd_trace_buffer;
         new->capture_backtrace = 0;
         new->next = NULL;
+        for (int i = 0; i < 4; i++) {
+            new->code_backup[i] = 0;
+        }
 
         if (!ftrace_head->next) {
             ftrace_head->next = new;
@@ -644,7 +646,13 @@ long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long 
         struct ftrace_info *prev = NULL;
         while (cur) {
             if (cur->faddr == faddr) {
-                // TODO: if tracing is enabled on this function, then, disable the tracing on the function
+                u8 *code = (u8 *)faddr;
+                if (code[0] == INV_OPCODE) {
+                    for (int i = 0; i < 4; i++) {
+                        code[i] = cur->code_backup[i];
+                        cur->code_backup[i] = 0;
+                    }
+                }
 
                 struct ftrace_info *next = cur->next;
                 os_free(cur, sizeof(struct ftrace_info));
@@ -674,8 +682,16 @@ long do_ftrace(struct exec_context *ctx, unsigned long faddr, long action, long 
         struct ftrace_info *cur = ftrace_head->next;
         while (cur) {
             if (cur->faddr == faddr) {
-                // TODO: manipulate the address space of the current process, so that, whenever the first instruction of the traced function gets executed, invalid opcode fault gets triggered
-                // TODO: return 0 if tracing is already enabled
+                u8 *code = (u8 *)faddr;
+                if (code[0] == INV_OPCODE) {
+                    return 0;
+                }
+
+                // code: 0x55 0x48 0x89 0xE5
+                for (int i = 0; i < 4; i++) {
+                    cur->code_backup[i] = code[i];
+                    code[i] = INV_OPCODE;
+                }
 
                 return 0;
             }
