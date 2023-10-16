@@ -467,6 +467,24 @@ void trace_buffer_read_num(struct trace_buffer_info *trace_buffer, void *buf) {
     }
 }
 
+u64 trace_buffer_get_num(struct trace_buffer_info *trace_buffer) {
+    u64 num;
+    void *num_ptr = (void *)&num;
+    u32 count = sizeof(u64);
+    if (count > TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off) {
+        u32 rem = TRACE_BUFFER_MAX_SIZE - trace_buffer->r_off;
+        memcpy(num_ptr, trace_buffer->buf + trace_buffer->r_off, rem);
+        memcpy(num_ptr + rem, trace_buffer->buf, count - rem);
+        trace_buffer->r_off = count - rem;
+    }
+    else {
+        memcpy(num_ptr, trace_buffer->buf + trace_buffer->r_off, count);
+        trace_buffer->r_off += count;
+    }
+
+    return num;
+}
+
 int sys_read_strace(struct file *filep, char *buff, u64 count) {
     if (!filep || filep->type != TRACE_BUFFER || !(filep->mode & O_READ)) {
         return -EINVAL;
@@ -492,13 +510,13 @@ int sys_read_strace(struct file *filep, char *buff, u64 count) {
     int bytes_read = 0;
     trace_buffer->is_full = 0;
     int size = sizeof(u64);
-    for (int i = 0; i < count; i++) {
+    for (u64 i = 0; i < count; i++) {
         if (used < size) {
             return bytes_read;
         }
 
-        u64 syscall_num = *(u64 *)(trace_buffer->buf + trace_buffer->r_off);
-        trace_buffer_read_num(trace_buffer, buff + bytes_read);
+        u64 syscall_num = trace_buffer_get_num(trace_buffer);
+        memcpy(buff + bytes_read, (void *)&syscall_num, size);
         bytes_read += size;
         used -= size;
 
@@ -876,5 +894,46 @@ long handle_ftrace_fault(struct user_regs *regs) {
 }
 
 int sys_read_ftrace(struct file *filep, char *buff, u64 count) {
-    return 0;
+    if (!filep || filep->type != TRACE_BUFFER || !(filep->mode & O_READ)) {
+        return -EINVAL;
+    }
+
+    if (!buff) {
+        return -EINVAL;
+    }
+
+    if (!count) {
+        return 0;
+    }
+
+    struct trace_buffer_info *trace_buffer = filep->trace_buffer;
+    int used;
+    if (trace_buffer->w_off >= trace_buffer->r_off) {
+        used = trace_buffer->w_off - trace_buffer->r_off;
+    }
+    else {
+        used = TRACE_BUFFER_MAX_SIZE - (trace_buffer->r_off - trace_buffer->w_off);
+    }
+
+    int bytes_read = 0;
+    trace_buffer->is_full = 0;
+    int size = sizeof(u64);
+    for (u64 i = 0; i < count; i++) {
+        if (used < size) {
+            return bytes_read;
+        }
+
+        u64 info_count = trace_buffer_get_num(trace_buffer);
+        for (u64 j = 0; j < info_count; j++) {
+            if (used < size) {
+                return bytes_read;
+            }
+
+            trace_buffer_read_num(trace_buffer, buff + bytes_read);
+            bytes_read += size;
+            used -= size;
+        }
+    }
+
+    return bytes_read;
 }
