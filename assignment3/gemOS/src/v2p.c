@@ -10,10 +10,13 @@
  * */
 
 u8 check_addr_free(struct vm_area *vm_area, u64 addr, int length) {
-    while (vm_area) {
-        if (vm_area->vm_start < addr + length && vm_area->vm_end > addr) {
+    struct vm_area *cur = vm_area;
+    while (cur) {
+        if (cur->vm_start < addr + length && cur->vm_end > addr) {
             return 0;
         }
+
+        cur = cur->vm_next;
     }
 
     return 1;
