@@ -67,7 +67,7 @@ long create_vma(struct vm_area *vm_area, u64 addr, int length, int prot, int fla
         prev->vm_end = cur->vm_end;
         prev->vm_next = cur->vm_next;
 
-        os_free(cur);
+        os_free(cur, sizeof(struct vm_area));
         stats->num_vm_area--;
         return addr;
     }
@@ -108,7 +108,7 @@ long delete_vmas(struct vm_area *vm_area, u64 addr, int length) {
 
     while (cur && cur->vm_start < addr + length) {
         prev->vm_next = cur->vm_next;
-        os_free(cur);
+        os_free(cur, sizeof(struct vm_area));
         stats->num_vm_area--;
 
         cur = prev->vm_next;
