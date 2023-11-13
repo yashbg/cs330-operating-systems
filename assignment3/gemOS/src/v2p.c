@@ -101,12 +101,44 @@ long create_vma(struct vm_area *vm_area, u64 addr, int length, int prot, int fla
 long delete_vmas(struct vm_area *vm_area, u64 addr, int length) {
     struct vm_area *prev = vm_area;
     struct vm_area *cur = vm_area->vm_next;
-    while (cur && cur->vm_start < addr) {
+    while (cur && cur->vm_end <= addr) {
         prev = cur;
         cur = cur->vm_next;
     }
 
     while (cur && cur->vm_start < addr + length) {
+        if (cur->vm_start < addr && cur->vm_end > addr + length) {
+            struct vm_area *new = os_alloc(sizeof(struct vm_area));
+            if (!new) {
+                return -EINVAL;
+            }
+
+            stats->num_vm_area++;
+
+            new->vm_start = addr + length;
+            new->vm_end = cur->vm_end;
+            new->access_flags = cur->access_flags;
+            new->vm_next = cur->vm_next;
+
+            cur->vm_end = addr;
+            cur->vm_next = new;
+
+            cur = cur->vm_next;
+            continue;
+        }
+
+        if (cur->vm_start < addr) {
+            cur->vm_end = addr;
+            cur = cur->vm_next;
+            continue;
+        }
+
+        if (cur->vm_end > addr + length) {
+            cur->vm_start = addr + length;
+            cur = cur->vm_next;
+            continue;
+        }
+
         prev->vm_next = cur->vm_next;
         os_free(cur, sizeof(struct vm_area));
         stats->num_vm_area--;
