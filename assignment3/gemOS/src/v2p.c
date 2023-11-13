@@ -9,6 +9,25 @@
  * You must not declare and use any static/global variables 
  * */
 
+#define PAGE_SIZE 4096
+
+int create_dummy_vma(struct exec_context *current) {
+    current->vm_area = os_alloc(sizeof(struct vm_area));
+    if (!current->vm_area) {
+        return -EINVAL;
+    }
+
+    stats->num_vm_area++;
+
+    struct vm_area *vm_area = current->vm_area;
+    vm_area->vm_start = MMAP_AREA_START;
+    vm_area->vm_end = vm_area->vm_start + PAGE_SIZE;
+    vm_area->access_flags = 0x0;
+    vm_area->vm_next = NULL;
+    
+    return 0;
+}
+
 u8 check_addr_free(struct vm_area *vm_area, u64 addr, int length) {
     struct vm_area *cur = vm_area;
     while (cur) {
@@ -20,6 +39,17 @@ u8 check_addr_free(struct vm_area *vm_area, u64 addr, int length) {
     }
 
     return 1;
+}
+
+long get_lowest_free_addr(struct vm_area *vm_area, int length) {
+    struct vm_area *prev = vm_area;
+    struct vm_area *cur = vm_area->vm_next;
+    while (cur && cur->vm_start - prev->vm_end < length) {
+        prev = cur;
+        cur = cur->vm_next;
+    }
+
+    return prev->vm_end;
 }
 
 long create_vma(struct vm_area *vm_area, u64 addr, int length, int prot, int flags) {
@@ -54,7 +84,7 @@ long create_vma(struct vm_area *vm_area, u64 addr, int length, int prot, int fla
 
     struct vm_area *new = os_alloc(sizeof(struct vm_area));
     if (!new) {
-        return -1;
+        return -EINVAL;
     }
 
     stats->num_vm_area++;
@@ -68,15 +98,23 @@ long create_vma(struct vm_area *vm_area, u64 addr, int length, int prot, int fla
     return addr;
 }
 
-long get_lowest_free_addr(struct vm_area *vm_area, int length) {
+long delete_vmas(struct vm_area *vm_area, u64 addr, int length) {
     struct vm_area *prev = vm_area;
     struct vm_area *cur = vm_area->vm_next;
-    while (cur && cur->vm_start - prev->vm_end < length) {
+    while (cur && cur->vm_start < addr) {
         prev = cur;
         cur = cur->vm_next;
     }
 
-    return prev->vm_end;
+    while (cur && cur->vm_start < addr + length) {
+        prev->vm_next = cur->vm_next;
+        os_free(cur);
+        stats->num_vm_area--;
+
+        cur = prev->vm_next;
+    }
+    
+    return 0;
 }
 
 /**
@@ -92,36 +130,29 @@ long vm_area_mprotect(struct exec_context *current, u64 addr, int length, int pr
 long vm_area_map(struct exec_context *current, u64 addr, int length, int prot, int flags) {
     // check validity of arguments
     if (!current) {
-        return -1;
+        return -EINVAL;
     }
     if (length <= 0) {
-        return -1;
+        return -EINVAL;
     }
     if (prot != PROT_READ && prot != (PROT_READ | PROT_WRITE)) {
-        return -1;
+        return -EINVAL;
     }
     if (flags && flags != MAP_FIXED) {
-        return -1;
+        return -EINVAL;
     }
 
     // size of VMAs must be a multiple of 4KB
-    length = length % 4096 ? length + 4096 - (length % 4096) : length;
+    length = length % PAGE_SIZE ? length + PAGE_SIZE - (length % PAGE_SIZE) : length;
 
     // create dummy node if not present
     if (!current->vm_area) {
-        current->vm_area = os_alloc(sizeof(struct vm_area));
-        if (!current->vm_area) {
-            return -1;
+        if (create_dummy_vma(current) < 0) {
+            return -EINVAL;
         }
-
-        stats->num_vm_area++;
-        struct vm_area *vm_area = current->vm_area;
-        vm_area->vm_start = MMAP_AREA_START;
-        vm_area->vm_end = vm_area->vm_start + 4096;
-        vm_area->access_flags = 0x0;
-        vm_area->vm_next = NULL;
     }
 
+    // create mapping
     struct vm_area *vm_area = current->vm_area;
     if (addr) {
         if (check_addr_free(vm_area, addr, length)) {
@@ -132,7 +163,7 @@ long vm_area_map(struct exec_context *current, u64 addr, int length, int prot, i
     }
 
     if (flags == MAP_FIXED) {
-        return -1;
+        return -EINVAL;
     }
 
     // use lowest available address
@@ -144,7 +175,26 @@ long vm_area_map(struct exec_context *current, u64 addr, int length, int prot, i
  * munmap system call implemenations
  */
 long vm_area_unmap(struct exec_context *current, u64 addr, int length) {
-    return -EINVAL;
+    // check validity of arguments
+    if (!current) {
+        return -EINVAL;
+    }
+    if (length <= 0) {
+        return -EINVAL;
+    }
+
+    // unmap at page granularity
+    length = length % PAGE_SIZE ? length + PAGE_SIZE - (length % PAGE_SIZE) : length;
+
+    // create dummy node if not present
+    if (!current->vm_area) {
+        if (create_dummy_vma(current) < 0) {
+            return -EINVAL;
+        }
+    }
+
+    // delete mappings
+    return delete_vmas(current->vm_area, addr, length);
 }
 
 /**
