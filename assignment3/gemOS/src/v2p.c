@@ -149,11 +149,152 @@ long delete_vmas(struct vm_area *vm_area, u64 addr, int length) {
     return 0;
 }
 
+long merge_vmas(struct vm_area *vm_area) {
+    struct vm_area *prev = vm_area;
+    struct vm_area *cur = vm_area->vm_next;
+    while (cur) {
+        if (prev->access_flags == cur->access_flags && prev->vm_end == cur->vm_start) {
+            prev->vm_end = cur->vm_end;
+            prev->vm_next = cur->vm_next;
+
+            os_free(cur, sizeof(struct vm_area));
+            stats->num_vm_area--;
+            
+            cur = prev->vm_next;
+            continue;
+        }
+
+        prev = cur;
+        cur = cur->vm_next;
+    }
+
+    return 0;
+}
+
+long change_vma_protections(struct vm_area *vm_area, u64 addr, int length, int prot) {
+    struct vm_area *prev = vm_area;
+    struct vm_area *cur = vm_area->vm_next;
+    while (cur && cur->vm_end <= addr) {
+        prev = cur;
+        cur = cur->vm_next;
+    }
+
+    while (cur && cur->vm_start < addr + length) {
+        if (cur->access_flags == prot) {
+            continue;
+        }
+
+        if (cur->vm_start < addr && cur->vm_end > addr + length) {
+            struct vm_area *new1 = os_alloc(sizeof(struct vm_area));
+            if (!new1) {
+                return -EINVAL;
+            }
+
+            stats->num_vm_area++;
+
+            new1->vm_start = addr;
+            new1->vm_end = addr + length;
+            new1->access_flags = prot;
+
+            struct vm_area *new2 = os_alloc(sizeof(struct vm_area));
+            if (!new2) {
+                return -EINVAL;
+            }
+
+            stats->num_vm_area++;
+
+            new2->vm_start = addr + length;
+            new2->vm_end = cur->vm_end;
+            new2->access_flags = cur->access_flags;
+            new2->vm_next = cur->vm_next;
+
+            cur->vm_end = addr;
+            cur->vm_next = new1;
+
+            new1->vm_next = new2;
+
+            prev = new2;
+            cur = new2->vm_next;
+            continue;
+        }
+
+        if (cur->vm_start < addr) {
+            struct vm_area *new = os_alloc(sizeof(struct vm_area));
+            if (!new) {
+                return -EINVAL;
+            }
+
+            stats->num_vm_area++;
+
+            new->vm_start = addr;
+            new->vm_end = cur->vm_end;
+            new->access_flags = prot;
+            new->vm_next = cur->vm_next;
+            
+            cur->vm_end = addr;
+
+            prev = new;
+            cur = new->vm_next;
+            continue;
+        }
+
+        if (cur->vm_end > addr + length) {
+            struct vm_area *new = os_alloc(sizeof(struct vm_area));
+            if (!new) {
+                return -EINVAL;
+            }
+
+            stats->num_vm_area++;
+
+            new->vm_start = addr + length;
+            new->vm_end = cur->vm_end;
+            new->access_flags = cur->access_flags;
+            new->vm_next = cur->vm_next;
+
+            cur->vm_end = addr + length;
+            cur->access_flags = prot;
+            cur->vm_next = new;
+            
+            prev = new;
+            cur = new->vm_next;
+            continue;
+        }
+
+        cur->access_flags = prot;
+        prev = cur;
+        cur = cur->vm_next;
+    }
+
+    return merge_vmas(vm_area);
+}
+
 /**
  * mprotect System call Implementation.
  */
 long vm_area_mprotect(struct exec_context *current, u64 addr, int length, int prot) {
-    return -EINVAL;
+    // check validity of arguments
+    if (!current) {
+        return -EINVAL;
+    }
+    if (length <= 0) {
+        return -EINVAL;
+    }
+    if (prot != PROT_READ && prot != (PROT_READ | PROT_WRITE)) {
+        return -EINVAL;
+    }
+
+    // change protections at page granularity
+    length = length % PAGE_SIZE ? length + PAGE_SIZE - (length % PAGE_SIZE) : length;
+
+    // create dummy node if not present
+    if (!current->vm_area) {
+        if (create_dummy_vma(current) < 0) {
+            return -EINVAL;
+        }
+    }
+
+    // change protections
+    return change_vma_protections(current->vm_area, addr, length, prot);
 }
 
 /**
