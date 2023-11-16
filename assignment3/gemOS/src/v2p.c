@@ -3,6 +3,7 @@
 #include <fork.h>
 #include <v2p.h>
 #include <page.h>
+#include <memory.h>
 
 /* 
  * You may define macros and other helper functions here
@@ -268,6 +269,28 @@ long change_vma_protections(struct vm_area *vm_area, u64 addr, int length, int p
     return merge_vmas(vm_area);
 }
 
+u8 check_access_valid(struct vm_area *vm_area, u64 addr, u32 access_flags) {
+    struct vm_area *cur = vm_area;
+    while (cur->vm_start <= addr) {
+        if (cur->vm_start <= addr && cur->vm_end > addr) {
+            return cur->access_flags & access_flags;
+        }
+    }
+
+    return 0;
+}
+
+u32 get_vma_access_flags(struct vm_area *vm_area, u64 addr) {
+    struct vm_area *cur = vm_area;
+    while (cur->vm_start <= addr) {
+        if (cur->vm_start <= addr && cur->vm_end > addr) {
+            return cur->access_flags;
+        }
+    }
+
+    return 0;
+}
+
 /**
  * mprotect System call Implementation.
  */
@@ -375,7 +398,95 @@ long vm_area_unmap(struct exec_context *current, u64 addr, int length) {
  * created using mmap
  */
 long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
-    return -1;
+    // 0x4 - User-mode read access to an unmapped page
+    // 0x6 - User-mode write access to an unmapped page
+    // 0x7 - User mode write access to read-only page
+
+    // check validity of arguments
+    if (!current) {
+        return -1;
+    }
+
+    // interpret error code
+    u8 present = error_code & 0x1;
+    u8 write = error_code & 0x2;
+    u8 user = error_code & 0x4; // TODO: remove?
+
+    u32 access_flags = write ? PROT_WRITE : PROT_READ;
+
+    // check if fault is due to protection violation
+    struct vm_area *vm_area = current->vm_area;
+    if (present) {
+        // check CoW access
+        if (!check_access_valid(vm_area, addr, PROT_WRITE)) {
+            return -1;
+        }
+
+        handle_cow_fault(current, addr, PROT_READ | PROT_WRITE); // TODO: correct?
+        return 1;
+    }
+
+    // check access validity
+    if (!check_access_valid(vm_area, addr, access_flags)) {
+        return -1;
+    }
+
+    u32 vma_access_flags = get_vma_access_flags(vm_area, addr);
+
+    // page walk
+    u64 *pgd_addr = osmap(current->pgd);
+    u32 pgd_offset = addr & (0x1FF << 39);
+    u64 pgd_t = pgd_addr[pgd_offset];
+    if (!(pgd_t & 0x1)) {
+        // allocate pud
+        u32 pud_pfn = os_pfn_alloc(OS_PT_REG);
+        if (!pud_pfn) {
+            return -1;
+        }
+
+        pgd_t = (pud_pfn << 12) | 0x19; // TODO: 0x19 correct?
+    }
+
+    u64 *pud_addr = osmap(pgd_t >> 12);
+    u32 pud_offset = addr & (0x1FF << 30);
+    u64 pud_t = pud_addr[pud_offset];
+    if (!(pud_t & 0x1)) {
+        // allocate pmd
+        u32 pmd_pfn = os_pfn_alloc(OS_PT_REG);
+        if (!pmd_pfn) {
+            return -1;
+        }
+
+        pud_t = (pmd_pfn << 12) | 0x19; // TODO: 0x19 correct?
+    }
+
+    u64 *pmd_addr = osmap(pud_t >> 12);
+    u32 pmd_offset = addr & (0x1FF << 21);
+    u64 pmd_t = pmd_addr[pmd_offset];
+    if (!(pmd_t & 0x1)) {
+        // allocate pte
+        u32 pte_pfn = os_pfn_alloc(OS_PT_REG);
+        if (!pte_pfn) {
+            return -1;
+        }
+
+        pmd_t = (pte_pfn << 12) | 0x19; // TODO: 0x19 correct?
+    }
+
+    u64 *pte_addr = osmap(pmd_t >> 12);
+    u32 pte_offset = addr & (0x1FF << 12);
+    u64 pte_t = pte_addr[pte_offset];
+    if (!(pte_t & 0x1)) {
+        // allocate page
+        u32 page_pfn = os_pfn_alloc(USER_REG);
+        if (!page_pfn) {
+            return -1;
+        }
+
+        pte_t = (page_pfn << 12) | 0x11 | (vma_access_flags & PROT_WRITE ? 0x1 << 3 : 0x0);
+    } 
+
+    return 1;
 }
 
 /**
