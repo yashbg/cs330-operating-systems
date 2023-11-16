@@ -344,6 +344,44 @@ void free_pfns(u64 pgd, u64 addr, int length) {
     }
 }
 
+void update_pfns_prot(u64 pgd, u64 addr, int length, int prot) {
+    for (u64 cur_addr = addr; cur_addr < addr + length; cur_addr += PAGE_SIZE) {
+        // page walk
+        u64 *pgd_addr = osmap(pgd);
+        int pgd_offset = (cur_addr >> 39) & 0x1FF;
+        u64 pgd_t = pgd_addr[pgd_offset];
+        if (!(pgd_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        u64 *pud_addr = osmap(pgd_t >> 12);
+        int pud_offset = (cur_addr >> 30) & 0x1FF;
+        u64 pud_t = pud_addr[pud_offset];
+        if (!(pud_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        u64 *pmd_addr = osmap(pud_t >> 12);
+        int pmd_offset = (cur_addr >> 21) & 0x1FF;
+        u64 pmd_t = pmd_addr[pmd_offset];
+        if (!(pmd_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        u64 *pte_addr = osmap(pmd_t >> 12);
+        int pte_offset = (cur_addr >> 12) & 0x1FF;
+        u64 pte_t = pte_addr[pte_offset];
+        if (!(pte_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        // update PFN's protection
+        pte_t = (pte_t & ~PTE_WRITE);
+        pte_t = prot & PROT_WRITE ? pte_t | PTE_WRITE : pte_t;
+        pte_addr[pte_offset] = pte_t;
+    }
+}
+
 /**
  * mprotect System call Implementation.
  */
@@ -370,7 +408,13 @@ long vm_area_mprotect(struct exec_context *current, u64 addr, int length, int pr
     }
 
     // change protections
-    return change_vma_protections(current->vm_area, addr, length, prot);
+    if (change_vma_protections(current->vm_area, addr, length, prot) < 0) {
+        return -EINVAL;
+    }
+
+    // update PFNs' protections
+    update_pfns_prot(current->pgd, addr, length, prot);
+    return 0;
 }
 
 /**
