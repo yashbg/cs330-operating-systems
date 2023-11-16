@@ -435,7 +435,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
 
     // page walk
     u64 *pgd_addr = osmap(current->pgd);
-    u32 pgd_offset = addr & (0x1FF << 39);
+    int pgd_offset = (addr >> 39) & 0x1FF;
     u64 pgd_t = pgd_addr[pgd_offset];
     if (!(pgd_t & 0x1)) {
         // allocate pud
@@ -448,7 +448,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     }
 
     u64 *pud_addr = osmap(pgd_t >> 12);
-    u32 pud_offset = addr & (0x1FF << 30);
+    int pud_offset = (addr >> 30) & 0x1FF;
     u64 pud_t = pud_addr[pud_offset];
     if (!(pud_t & 0x1)) {
         // allocate pmd
@@ -461,7 +461,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     }
 
     u64 *pmd_addr = osmap(pud_t >> 12);
-    u32 pmd_offset = addr & (0x1FF << 21);
+    int pmd_offset = (addr >> 21) & 0x1FF;
     u64 pmd_t = pmd_addr[pmd_offset];
     if (!(pmd_t & 0x1)) {
         // allocate pte
@@ -474,7 +474,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     }
 
     u64 *pte_addr = osmap(pmd_t >> 12);
-    u32 pte_offset = addr & (0x1FF << 12);
+    int pte_offset = (addr >> 12) & 0x1FF;
     u64 pte_t = pte_addr[pte_offset];
     if (!(pte_t & 0x1)) {
         // allocate page
