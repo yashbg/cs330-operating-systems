@@ -422,8 +422,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
             return -1;
         }
 
-        handle_cow_fault(current, addr, PROT_READ | PROT_WRITE); // TODO: correct?
-        return 1;
+        return handle_cow_fault(current, addr, PROT_READ | PROT_WRITE); // TODO: correct?
     }
 
     // check access validity
