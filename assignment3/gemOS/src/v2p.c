@@ -275,6 +275,8 @@ u8 check_access_valid(struct vm_area *vm_area, u64 addr, u32 access_flags) {
         if (cur->vm_start <= addr && cur->vm_end > addr) {
             return cur->access_flags & access_flags;
         }
+
+        cur = cur->vm_next;
     }
 
     return 0;
@@ -286,6 +288,8 @@ u32 get_vma_access_flags(struct vm_area *vm_area, u64 addr) {
         if (cur->vm_start <= addr && cur->vm_end > addr) {
             return cur->access_flags;
         }
+
+        cur = cur->vm_next;
     }
 
     return 0;
@@ -398,10 +402,6 @@ long vm_area_unmap(struct exec_context *current, u64 addr, int length) {
  * created using mmap
  */
 long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
-    // 0x4 - User-mode read access to an unmapped page
-    // 0x6 - User-mode write access to an unmapped page
-    // 0x7 - User mode write access to read-only page
-
     // check validity of arguments
     if (!current) {
         return -1;
