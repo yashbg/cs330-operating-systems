@@ -410,7 +410,6 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     // interpret error code
     u8 present = error_code & 0x1;
     u8 write = error_code & 0x2;
-    u8 user = error_code & 0x4; // TODO: remove?
 
     u32 access_flags = write ? PROT_WRITE : PROT_READ;
 
@@ -422,7 +421,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
             return -1;
         }
 
-        return handle_cow_fault(current, addr, PROT_READ | PROT_WRITE); // TODO: correct?
+        return handle_cow_fault(current, addr, PROT_READ | PROT_WRITE);
     }
 
     // check access validity
@@ -443,7 +442,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
             return -1;
         }
 
-        pgd_t = (pud_pfn << 12) | 0x19; // TODO: 0x19 correct?
+        pgd_t = (pud_pfn << 12) | 0x19;
     }
 
     u64 *pud_addr = osmap(pgd_t >> 12);
@@ -456,7 +455,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
             return -1;
         }
 
-        pud_t = (pmd_pfn << 12) | 0x19; // TODO: 0x19 correct?
+        pud_t = (pmd_pfn << 12) | 0x19;
     }
 
     u64 *pmd_addr = osmap(pud_t >> 12);
@@ -469,7 +468,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
             return -1;
         }
 
-        pmd_t = (pte_pfn << 12) | 0x19; // TODO: 0x19 correct?
+        pmd_t = (pte_pfn << 12) | 0x19;
     }
 
     u64 *pte_addr = osmap(pmd_t >> 12);
@@ -482,7 +481,8 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
             return -1;
         }
 
-        pte_t = (page_pfn << 12) | 0x11 | (vma_access_flags & PROT_WRITE ? 0x1 << 3 : 0x0);
+        u64 write_mask = vma_access_flags & PROT_WRITE ? 0x1 << 3 : 0x0;
+        pte_t = (page_pfn << 12) | 0x11 | write_mask;
     } 
 
     return 1;
