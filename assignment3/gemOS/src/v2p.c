@@ -12,6 +12,13 @@
 
 #define PAGE_SIZE 4096
 
+#define PAGE_FAULT_PRESENT 0x1
+#define PAGE_FAULT_WRITE 0x2
+
+#define PTE_PRESENT 0x1
+#define PTE_WRITE 0x8
+#define PTE_USER 0x10
+
 int create_dummy_vma(struct exec_context *current) {
     current->vm_area = os_alloc(sizeof(struct vm_area));
     if (!current->vm_area) {
@@ -406,19 +413,15 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
         return -1;
     }
 
-    // interpret error code
-    u8 present = error_code & 0x1;
-    u8 write = error_code & 0x2;
-
     // check access validity
     struct vm_area *vm_area = current->vm_area;
-    u32 access_flags = write ? PROT_WRITE : PROT_READ;
+    u32 access_flags = error_code & PAGE_FAULT_WRITE ? PROT_WRITE : PROT_READ;
     if (!check_access_valid(vm_area, addr, access_flags)) {
         return -1;
     }
 
     // check CoW access
-    if (present) {
+    if (error_code & PAGE_FAULT_PRESENT) {
         return handle_cow_fault(current, addr, PROT_READ | PROT_WRITE);
     }
 
@@ -426,49 +429,49 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     u64 *pgd_addr = osmap(current->pgd);
     int pgd_offset = (addr >> 39) & 0x1FF;
     u64 pgd_t = pgd_addr[pgd_offset];
-    if (!(pgd_t & 0x1)) {
+    if (!(pgd_t & PTE_PRESENT)) {
         // allocate pud
         u64 pud_pfn = os_pfn_alloc(OS_PT_REG);
         if (!pud_pfn) {
             return -1;
         }
 
-        pgd_t = (pud_pfn << 12) | 0x19;
+        pgd_t = (pud_pfn << 12) | PTE_PRESENT | PTE_WRITE | PTE_USER;
         pgd_addr[pgd_offset] = pgd_t;
     }
 
     u64 *pud_addr = osmap(pgd_t >> 12);
     int pud_offset = (addr >> 30) & 0x1FF;
     u64 pud_t = pud_addr[pud_offset];
-    if (!(pud_t & 0x1)) {
+    if (!(pud_t & PTE_PRESENT)) {
         // allocate pmd
         u64 pmd_pfn = os_pfn_alloc(OS_PT_REG);
         if (!pmd_pfn) {
             return -1;
         }
 
-        pud_t = (pmd_pfn << 12) | 0x19;
+        pud_t = (pmd_pfn << 12) | PTE_PRESENT | PTE_WRITE | PTE_USER;
         pud_addr[pud_offset] = pud_t;
     }
 
     u64 *pmd_addr = osmap(pud_t >> 12);
     int pmd_offset = (addr >> 21) & 0x1FF;
     u64 pmd_t = pmd_addr[pmd_offset];
-    if (!(pmd_t & 0x1)) {
+    if (!(pmd_t & PTE_PRESENT)) {
         // allocate pte
         u64 pte_pfn = os_pfn_alloc(OS_PT_REG);
         if (!pte_pfn) {
             return -1;
         }
 
-        pmd_t = (pte_pfn << 12) | 0x19;
+        pmd_t = (pte_pfn << 12) | PTE_PRESENT | PTE_WRITE | PTE_USER;
         pmd_addr[pmd_offset] = pmd_t;
     }
 
     u64 *pte_addr = osmap(pmd_t >> 12);
     int pte_offset = (addr >> 12) & 0x1FF;
     u64 pte_t = pte_addr[pte_offset];
-    if (!(pte_t & 0x1)) {
+    if (!(pte_t & PTE_PRESENT)) {
         // allocate page
         u64 page_pfn = os_pfn_alloc(USER_REG);
         if (!page_pfn) {
@@ -476,8 +479,8 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
         }
 
         u64 vma_access_flags = get_vma_access_flags(vm_area, addr);
-        u64 write_mask = vma_access_flags & PROT_WRITE ? 0x1 << 3 : 0x0;
-        pte_t = (page_pfn << 12) | 0x11 | write_mask;
+        pte_t = (page_pfn << 12) | PTE_PRESENT | PTE_USER;
+        pte_t = vma_access_flags & PROT_WRITE ? pte_t | PTE_WRITE : pte_t;
         pte_addr[pte_offset] = pte_t;
     }
 
