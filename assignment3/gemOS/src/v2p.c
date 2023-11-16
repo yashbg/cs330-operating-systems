@@ -402,7 +402,6 @@ long vm_area_unmap(struct exec_context *current, u64 addr, int length) {
  * created using mmap
  */
 long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
-    // check validity of arguments
     if (!current) {
         return -1;
     }
@@ -411,25 +410,17 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     u8 present = error_code & 0x1;
     u8 write = error_code & 0x2;
 
-    u32 access_flags = write ? PROT_WRITE : PROT_READ;
-
-    // check if fault is due to protection violation
-    struct vm_area *vm_area = current->vm_area;
-    if (present) {
-        // check CoW access
-        if (!check_access_valid(vm_area, addr, PROT_WRITE)) {
-            return -1;
-        }
-
-        return handle_cow_fault(current, addr, PROT_READ | PROT_WRITE);
-    }
-
     // check access validity
+    struct vm_area *vm_area = current->vm_area;
+    u32 access_flags = write ? PROT_WRITE : PROT_READ;
     if (!check_access_valid(vm_area, addr, access_flags)) {
         return -1;
     }
 
-    u32 vma_access_flags = get_vma_access_flags(vm_area, addr);
+    // check CoW access
+    if (present) {
+        return handle_cow_fault(current, addr, PROT_READ | PROT_WRITE);
+    }
 
     // page walk
     u64 *pgd_addr = osmap(current->pgd);
@@ -437,7 +428,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     u64 pgd_t = pgd_addr[pgd_offset];
     if (!(pgd_t & 0x1)) {
         // allocate pud
-        u32 pud_pfn = os_pfn_alloc(OS_PT_REG);
+        u64 pud_pfn = os_pfn_alloc(OS_PT_REG);
         if (!pud_pfn) {
             return -1;
         }
@@ -451,7 +442,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     u64 pud_t = pud_addr[pud_offset];
     if (!(pud_t & 0x1)) {
         // allocate pmd
-        u32 pmd_pfn = os_pfn_alloc(OS_PT_REG);
+        u64 pmd_pfn = os_pfn_alloc(OS_PT_REG);
         if (!pmd_pfn) {
             return -1;
         }
@@ -465,7 +456,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     u64 pmd_t = pmd_addr[pmd_offset];
     if (!(pmd_t & 0x1)) {
         // allocate pte
-        u32 pte_pfn = os_pfn_alloc(OS_PT_REG);
+        u64 pte_pfn = os_pfn_alloc(OS_PT_REG);
         if (!pte_pfn) {
             return -1;
         }
@@ -479,11 +470,12 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
     u64 pte_t = pte_addr[pte_offset];
     if (!(pte_t & 0x1)) {
         // allocate page
-        u32 page_pfn = os_pfn_alloc(USER_REG);
+        u64 page_pfn = os_pfn_alloc(USER_REG);
         if (!page_pfn) {
             return -1;
         }
 
+        u64 vma_access_flags = get_vma_access_flags(vm_area, addr);
         u64 write_mask = vma_access_flags & PROT_WRITE ? 0x1 << 3 : 0x0;
         pte_t = (page_pfn << 12) | 0x11 | write_mask;
         pte_addr[pte_offset] = pte_t;
