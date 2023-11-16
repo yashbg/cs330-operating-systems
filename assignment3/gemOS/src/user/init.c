@@ -3,39 +3,36 @@
 int main(u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5)
 {
   int pages = 4096;
-
-  // vm_area will be created without physical pages.
-  char * lazy_alloc = mmap(NULL, pages*50, PROT_READ|PROT_WRITE, 0);
-  if((long)lazy_alloc < 0)
+  char * mm1 = mmap(NULL, pages*6, PROT_READ, 0);
+  if((long)mm1 < 0)
   {
     // Testcase failed.
-    printf("Test case failed \n");
+     printf("Test case failed \n");
     return 1;
   }
-  
-  // All accesses should result in page fault.
-  for(int i = 0; i<50; i++)
+  //Read all the pages
+  for(int i = 0; i < 6; i++){
+        char temp;
+        char* page_read = mm1 +(i*pages);
+        temp = page_read[0];
+  }
+  //Page faults should be 6
+  pmap(0);
+  //changing the protection should give access to write
+  int result  = mprotect((void *)mm1, pages*6, PROT_READ|PROT_WRITE);
+  if(result <0)
   {
-    lazy_alloc[(pages * i)] = 'X';
+     printf("Test case failed \n");
+    return 0;
   }
 
-  // Number of MMAP_Page_Faults should be 50 & 
-  // Number of vm_area should 1
-  pmap(0);
-
-  for(int i = 0; i<50; i++)
-  {
-    // Reading the value from physical page. It should be same as written
-    if(lazy_alloc[(pages * i)] != 'X')
-    {
-      // Testcase Failed;
-      printf("Test case failed \n");
-      return 0;
-    }
+  for(int i = 0; i < 6; i++){
+        char* page_write = mm1 +(i*pages);
+        page_write[0] = 'A';
   }
-  // Number of MMAP_Page_Faults should be 50 & 
-  // Number of vm_area should 1
+  //Page faults should be 6
   pmap(0);
 
- return 0;
+  return 0;
 }
+

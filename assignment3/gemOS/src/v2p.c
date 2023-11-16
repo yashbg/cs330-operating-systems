@@ -341,6 +341,9 @@ void free_pfns(u64 pgd, u64 addr, int length) {
         }
 
         pte_addr[pte_offset] = 0x0;
+
+        // invalidate TLB entry
+        asm volatile ("invlpg (%0)" : : "r" (cur_addr) : "memory");
     }
 }
 
@@ -379,6 +382,9 @@ void update_pfns_prot(u64 pgd, u64 addr, int length, int prot) {
         pte_t = (pte_t & ~PTE_WRITE);
         pte_t = prot & PROT_WRITE ? pte_t | PTE_WRITE : pte_t;
         pte_addr[pte_offset] = pte_t;
+
+        // invalidate TLB entry
+        asm volatile ("invlpg (%0)" : : "r" (cur_addr) : "memory");
     }
 }
 
