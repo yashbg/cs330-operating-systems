@@ -388,6 +388,95 @@ void update_pfns_prot(u64 pgd, u64 addr, int length, int prot) {
     }
 }
 
+long copy_user_pts(u64 p_pgd, u64 c_pgd, u64 addr_start, u64 addr_end) {
+    for (u64 addr = addr_start; addr < addr_end; addr += PAGE_SIZE) {
+        // parent page walk
+        u64 *pgd_addr = osmap(p_pgd);
+        int pgd_offset = (addr >> 39) & 0x1FF;
+        u64 pgd_t = pgd_addr[pgd_offset];
+        if (!(pgd_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        u64 *pud_addr = osmap(pgd_t >> 12);
+        int pud_offset = (addr >> 30) & 0x1FF;
+        u64 pud_t = pud_addr[pud_offset];
+        if (!(pud_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        u64 *pmd_addr = osmap(pud_t >> 12);
+        int pmd_offset = (addr >> 21) & 0x1FF;
+        u64 pmd_t = pmd_addr[pmd_offset];
+        if (!(pmd_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        u64 *pte_addr = osmap(pmd_t >> 12);
+        int pte_offset = (addr >> 12) & 0x1FF;
+        u64 p_pte_t = pte_addr[pte_offset];
+        if (!(p_pte_t & PTE_PRESENT)) {
+            continue;
+        }
+
+        // update PFN's protection to read-only
+        p_pte_t = (p_pte_t & ~PTE_WRITE);
+        pte_addr[pte_offset] = p_pte_t;
+
+        // child page walk
+        pgd_addr = osmap(c_pgd);
+        pgd_offset = (addr >> 39) & 0x1FF;
+        pgd_t = pgd_addr[pgd_offset];
+        if (!(pgd_t & PTE_PRESENT)) {
+            // allocate pud
+            u64 pud_pfn = os_pfn_alloc(OS_PT_REG);
+            if (!pud_pfn) {
+                return -1;
+            }
+
+            pgd_t = (pud_pfn << 12) | PTE_PRESENT | PTE_WRITE | PTE_USER;
+            pgd_addr[pgd_offset] = pgd_t;
+        }
+
+        pud_addr = osmap(pgd_t >> 12);
+        pud_offset = (addr >> 30) & 0x1FF;
+        pud_t = pud_addr[pud_offset];
+        if (!(pud_t & PTE_PRESENT)) {
+            // allocate pmd
+            u64 pmd_pfn = os_pfn_alloc(OS_PT_REG);
+            if (!pmd_pfn) {
+                return -1;
+            }
+
+            pud_t = (pmd_pfn << 12) | PTE_PRESENT | PTE_WRITE | PTE_USER;
+            pud_addr[pud_offset] = pud_t;
+        }
+
+        pmd_addr = osmap(pud_t >> 12);
+        pmd_offset = (addr >> 21) & 0x1FF;
+        pmd_t = pmd_addr[pmd_offset];
+        if (!(pmd_t & PTE_PRESENT)) {
+            // allocate pte
+            u64 pte_pfn = os_pfn_alloc(OS_PT_REG);
+            if (!pte_pfn) {
+                return -1;
+            }
+
+            pmd_t = (pte_pfn << 12) | PTE_PRESENT | PTE_WRITE | PTE_USER;
+            pmd_addr[pmd_offset] = pmd_t;
+        }
+
+        pte_addr = osmap(pmd_t >> 12);
+        pte_offset = (addr >> 12) & 0x1FF;
+
+        // point to parent PFN
+        pte_addr[pte_offset] = p_pte_t;
+        get_pfn(p_pte_t >> 12);
+    }
+
+    return 0;
+}
+
 /**
  * mprotect System call Implementation.
  */
@@ -595,17 +684,107 @@ long do_cfork() {
     u32 pid;
     struct exec_context *new_ctx = get_new_ctx();
     struct exec_context *ctx = get_current_ctx();
-     /* Do not modify above lines
-     * 
-     * */   
-     /*--------------------- Your code [start]---------------*/
-     
+    /* Do not modify above lines
+    * 
+    * */   
+    /*--------------------- Your code [start]---------------*/
 
-     /*--------------------- Your code [end] ----------------*/
-    
-     /*
-     * The remaining part must not be changed
-     */
+    // copy all members of parent's exec_context to child's exec_context
+    pid = new_ctx->pid;
+    new_ctx->ppid = ctx->pid;
+    new_ctx->type = ctx->type;
+    new_ctx->state = ctx->state;
+    new_ctx->used_mem = ctx->used_mem;
+
+    // copy mm_segment
+    for (int i = 0; i < MAX_MM_SEGS; i++) {
+        new_ctx->mms[i] = ctx->mms[i];
+    }
+
+    // deep copy vm_area
+    struct vm_area *vm_area = ctx->vm_area;
+    struct vm_area *prev = NULL;
+    struct vm_area *cur = vm_area;
+    while (cur) {
+        struct vm_area *new = os_alloc(sizeof(struct vm_area));
+        if (!new) {
+            return -1;
+        }
+
+        stats->num_vm_area++;
+
+        new->vm_start = cur->vm_start;
+        new->vm_end = cur->vm_end;
+        new->access_flags = cur->access_flags;
+        new->vm_next = NULL;
+
+        if (!prev) {
+            new_ctx->vm_area = new;
+        } else {
+            prev->vm_next = new;
+        }
+
+        prev = new;
+        cur = cur->vm_next;
+    }
+
+    // copy name
+    for (int i = 0; i < CNAME_MAX; i++) {
+        new_ctx->name[i] = ctx->name[i];
+    }
+
+    new_ctx->regs = ctx->regs;
+    new_ctx->pending_signal_bitmap = ctx->pending_signal_bitmap;
+
+    // copy sighandlers
+    for (int i = 0; i < MAX_SIGNALS; i++) {
+        new_ctx->sighandlers[i] = ctx->sighandlers[i];
+    }
+
+    new_ctx->ticks_to_sleep = ctx->ticks_to_sleep;
+    new_ctx->alarm_config_time = ctx->alarm_config_time;
+    new_ctx->ticks_to_alarm = ctx->ticks_to_alarm;
+
+    // copy files
+    for (int i = 0; i < MAX_OPEN_FILES; i++) {
+        new_ctx->files[i] = ctx->files[i];
+    }
+
+    new_ctx->ctx_threads = ctx->ctx_threads;
+
+    // build new page table
+    u64 pgd = os_pfn_alloc(OS_PT_REG);
+    if (!pgd) {
+        return -1;
+    }
+
+    new_ctx->pgd = pgd;
+
+    // create page table entries for memory segments
+    for (int i = 0; i < MAX_MM_SEGS; i++) {
+        struct mm_segment *mm = &ctx->mms[i];
+        unsigned long mm_start = mm->start;
+        unsigned long mm_end = i == MM_SEG_STACK ? mm->end : mm->next_free;
+        if (copy_user_pts(ctx->pgd, new_ctx->pgd, mm_start, mm_end) < 0) {
+            return -1;
+        }
+    }
+
+    // create page table entries for vm areas
+    cur = vm_area;
+    while (cur) {
+        if (copy_user_pts(ctx->pgd, new_ctx->pgd, cur->vm_start, cur->vm_end) < 0) {
+            return -1;
+        }
+
+        cur = cur->vm_next;
+    }
+
+    /*--------------------- Your code [end] ----------------*/
+
+    /*
+    * The remaining part must not be changed
+    */
     copy_os_pts(ctx->pgd, new_ctx->pgd);
     do_file_fork(new_ctx);
     setup_child_context(new_ctx);
