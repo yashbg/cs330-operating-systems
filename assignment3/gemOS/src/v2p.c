@@ -443,6 +443,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
         }
 
         pgd_t = (pud_pfn << 12) | 0x19;
+        pgd_addr[pgd_offset] = pgd_t;
     }
 
     u64 *pud_addr = osmap(pgd_t >> 12);
@@ -456,6 +457,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
         }
 
         pud_t = (pmd_pfn << 12) | 0x19;
+        pud_addr[pud_offset] = pud_t;
     }
 
     u64 *pmd_addr = osmap(pud_t >> 12);
@@ -469,6 +471,7 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
         }
 
         pmd_t = (pte_pfn << 12) | 0x19;
+        pmd_addr[pmd_offset] = pmd_t;
     }
 
     u64 *pte_addr = osmap(pmd_t >> 12);
@@ -483,7 +486,8 @@ long vm_area_pagefault(struct exec_context *current, u64 addr, int error_code) {
 
         u64 write_mask = vma_access_flags & PROT_WRITE ? 0x1 << 3 : 0x0;
         pte_t = (page_pfn << 12) | 0x11 | write_mask;
-    } 
+        pte_addr[pte_offset] = pte_t;
+    }
 
     return 1;
 }
