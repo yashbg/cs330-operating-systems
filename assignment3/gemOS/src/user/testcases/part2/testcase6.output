@@ -1,0 +1,4 @@
+VM_Area:[1]	MMAP_Page_Faults[50]
+VM_Area:[1]	MMAP_Page_Faults[50]
+Reached end of the program
+do_page_fault: (Sig_Exit) PF Error @ [RIP: 0x100000E7F] [accessed VA: 0x180201000] [error code: 0x4]
